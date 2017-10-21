@@ -22,6 +22,7 @@
 #define MODULES_MAP_PNC_MAP_PNC_MAP_H_
 
 #include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -38,38 +39,42 @@ using LaneSegments = std::vector<LaneSegment>;
 
 class PncMap {
  public:
-  PncMap() = default;
   virtual ~PncMap() = default;
-  explicit PncMap(const std::string &map_file);
+  explicit PncMap(const HDMap *hdmap);
 
-  const hdmap::HDMap& HDMap() const;
+  const hdmap::HDMap *hdmap() const;
 
-  /**
-   * @brief Warning: this function only works if there is no change lane in
-   *routing.
-   **/
-  bool CreatePathFromRouting(const routing::RoutingResponse &routing,
-                             Path *const path) const;
+  bool UpdateRoutingResponse(const routing::RoutingResponse &routing_response);
+
+  const routing::RoutingResponse &routing_response() const;
 
   bool GetLaneSegmentsFromRouting(
-      const routing::RoutingResponse &routing,
-      const common::PointENU &point,
-      const double backward_length, const double forward_length,
+      const common::PointENU &point, const double backward_length,
+      const double forward_length,
       std::vector<LaneSegments> *const route_segments) const;
 
   static bool CreatePathFromLaneSegments(const LaneSegments &segments,
                                          Path *const path);
+  std::mutex reference_line_groups_mutex_;
 
  private:
-  bool TruncateLaneSegments(const LaneSegments &segments,
-                            double start_s, double end_s,
+  bool GetNearestPointFromRouting(const common::PointENU &point,
+                                  LaneWaypoint *waypoint) const;
+
+  bool TruncateLaneSegments(const LaneSegments &segments, double start_s,
+                            double end_s,
                             LaneSegments *const truncated_segments) const;
 
-  bool ValidateRouting(const routing::RoutingResponse &routing) const;
-  static void AppendLaneToPoints(
-      LaneInfoConstPtr lane, const double start_s, const double end_s,
-      std::vector<MapPathPoint> *const points);
-  hdmap::HDMap hdmap_;
+  static bool ValidateRouting(const routing::RoutingResponse &routing);
+
+  static void AppendLaneToPoints(LaneInfoConstPtr lane, const double start_s,
+                                 const double end_s,
+                                 std::vector<MapPathPoint> *const points);
+
+ private:
+  routing::RoutingResponse routing_;
+  std::unique_ptr<LaneWaypoint> last_waypoint_;
+  const hdmap::HDMap *hdmap_ = nullptr;
 };
 
 }  // namespace hdmap

@@ -31,8 +31,11 @@ DEFINE_double(trajectory_resolution, 0.01,
               "The time resolution of "
               "output trajectory.");
 
+DEFINE_bool(publish_estop, false, "publish estop decision in planning");
+DEFINE_bool(enable_trajectory_stitcher, true, "enable stitching trajectory");
+
 DEFINE_double(
-    look_backward_distance, 10,
+    look_backward_distance, 30,
     "look backward this distance when creating reference line from routing");
 
 DEFINE_double(
@@ -131,14 +134,34 @@ DEFINE_bool(enable_rule_layer, true,
             "enable rule for trajectory before model computation");
 
 // Traffic decision
-DEFINE_bool(enable_signal_lights, false, "enable signal_lights");
-DEFINE_double(max_distance_for_light_stop_buffer, 4.0,
-              "length of passing light stop line buffer");
-DEFINE_double(min_speed_for_light_stop, 0.1,
-              "min speed for computing signal light stop");
-DEFINE_string(signal_light_virtual_object_prefix, "SL_",
+/// common
+DEFINE_double(stop_max_distance_buffer, 4.0,
+              "distance buffer of passing stop line");
+DEFINE_double(stop_min_speed, 0.1, "min speed for computing stop");
+DEFINE_double(stop_max_deceleration, 6.0, "max deceleration");
+/// Clear Zone
+DEFINE_string(clear_zone_virtual_object_id_prefix, "CZ_",
+              "prefix for converting clear zone id to virtual object id");
+/// traffic light
+DEFINE_string(signal_light_virtual_object_id_prefix, "SL_",
               "prefix for converting signal id to virtual object id");
+DEFINE_double(max_deacceleration_for_yellow_light_stop, 2.0,
+              "treat yellow light as red when deceleration (abstract value"
+              " in m/s^2) is less than this threshold; otherwise treated"
+              " as green light");
+/// crosswalk
+DEFINE_bool(enable_crosswalk, false, "enable crosswalk");
+DEFINE_string(crosswalk_virtual_object_id_prefix, "CW_",
+              "prefix for converting crosswalk id to virtual object id");
+DEFINE_double(crosswalk_expand_distance, 2.0,
+              "crosswalk expand distance(meter) "
+              "for pedestrian/bicycle detection");
+DEFINE_double(crosswalk_strick_l_distance, 4.0,
+              "strick stop rule within this l_distance");
+DEFINE_double(crosswalk_loose_l_distance, 5.0,
+              "loose stop rule beyond this l_distance");
 
+// planning config file
 DEFINE_string(planning_config_file,
               "modules/planning/conf/planning_config.pb.txt",
               "planning config file");
@@ -162,3 +185,6 @@ DEFINE_double(slowdown_profile_deceleration, -1.0,
               "The deceleration to generate slowdown profile. unit: m/s^2.");
 DEFINE_bool(enable_follow_accel_constraint, true,
             "Enable follow acceleration constraint.");
+
+// SQP solver
+DEFINE_bool(enable_sqp_solver, true, "True to enable SQP solver.");

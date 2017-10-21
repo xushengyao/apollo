@@ -29,6 +29,7 @@
 #include "modules/common/log.h"
 #include "modules/common/math/vec2d.h"
 #include "modules/common/util/file.h"
+#include "modules/common/util/util.h"
 #include "modules/planning/math/curve_math.h"
 
 namespace apollo {
@@ -46,24 +47,23 @@ void ReferenceLineSmoother::Init(const ReferenceLineSmootherConfig& config) {
   smoother_config_ = config;
 }
 
-void ReferenceLineSmoother::Reset() {
+void ReferenceLineSmoother::Clear() {
   t_knots_.clear();
   ref_points_.clear();
-  spline_solver_.reset(nullptr);
 }
 
-bool ReferenceLineSmoother::Smooth(
-    const ReferenceLine& raw_reference_line,
-    ReferenceLine* const smoothed_reference_line) {
-  Reset();
+bool ReferenceLineSmoother::Smooth(const ReferenceLine& raw_reference_line,
+                                   ReferenceLine* const smoothed_reference_line,
+                                   Spline2dSolver* const spline_solver) {
+  Clear();
+  spline_solver_ = spline_solver;
   std::vector<ReferencePoint> ref_points;
   if (!Sampling(raw_reference_line)) {
     AERROR << "Fail to sample reference line smoother points!";
     return false;
   }
 
-  spline_solver_.reset(
-      new Spline2dSolver(t_knots_, smoother_config_.spline_order()));
+  spline_solver_->Reset(t_knots_, smoother_config_.spline_order());
 
   if (!ApplyConstraint(raw_reference_line)) {
     AERROR << "Add constraint for spline smoother failed";
@@ -132,19 +132,19 @@ bool ReferenceLineSmoother::Smooth(
 
 bool ReferenceLineSmoother::Sampling(const ReferenceLine& raw_reference_line) {
   const double length = raw_reference_line.Length();
-  const double resolution = length / smoother_config_.num_spline();
-  double accumulated_s = 0.0;
-  for (std::uint32_t i = 0; i <= smoother_config_.num_spline();
-       ++i, accumulated_s = std::min(accumulated_s + resolution, length)) {
-    ReferencePoint rlp = raw_reference_line.GetReferencePoint(accumulated_s);
+  ADEBUG << "Length = " << length;
+  uint32_t num_spline = std::max(
+      2u, static_cast<uint32_t>(length / smoother_config_.max_spline_length()));
+  const double delta_s = length / num_spline;
+  double s = 0.0;
+  for (std::uint32_t i = 0; i <= num_spline; ++i, s += delta_s) {
+    ReferencePoint rlp = raw_reference_line.GetReferencePoint(s);
     common::PathPoint path_point;
     path_point.set_x(rlp.x());
     path_point.set_y(rlp.y());
     path_point.set_theta(rlp.heading());
-    path_point.set_s(accumulated_s);
+    path_point.set_s(s);
     ref_points_.push_back(std::move(path_point));
-
-    // use t_knots_: 0.0, 1.0, 2.0, 3.0 ...
     t_knots_.push_back(i * 1.0);
   }
   return true;
@@ -152,14 +152,11 @@ bool ReferenceLineSmoother::Sampling(const ReferenceLine& raw_reference_line) {
 
 bool ReferenceLineSmoother::ApplyConstraint(
     const ReferenceLine& raw_reference_line) {
-  const double t_length = t_knots_.back() - t_knots_.front();
-  const double dt = t_length / (smoother_config_.num_evaluated_points() - 1);
+  uint32_t constraint_num = 3 * (t_knots_.size() - 1) + 1;
+
   std::vector<double> evaluated_t;
-  double accumulated_eval_t = 0.0;
-  for (std::uint32_t i = 0; i < smoother_config_.num_evaluated_points();
-       ++i, accumulated_eval_t += dt) {
-    evaluated_t.push_back(accumulated_eval_t);
-  }
+  common::util::uniform_slice(t_knots_.front(), t_knots_.back(),
+                              constraint_num - 1, &evaluated_t);
   std::vector<common::PathPoint> path_points;
   if (!ExtractEvaluatedPoints(raw_reference_line, evaluated_t, &path_points)) {
     AERROR << "Extract evaluated points failed";
@@ -187,7 +184,6 @@ bool ReferenceLineSmoother::ApplyConstraint(
   }
 
   if (lateral_bound.size() > 0) {
-    lateral_bound.front() = 0.0;
     lateral_bound.back() = kFixedBoundLimit;
   }
 
