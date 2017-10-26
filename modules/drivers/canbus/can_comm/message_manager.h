@@ -68,6 +68,10 @@ template <typename SensorType>
 class MessageManager {
  public:
   /*
+  * @brief constructor function
+  */
+  MessageManager() {}
+  /*
    * @brief destructor function
    */
   virtual ~MessageManager() = default;
@@ -77,10 +81,9 @@ class MessageManager {
    * @param message_id the id of the message
    * @param data a pointer to the data array to be parsed
    * @param length the length of data array
-   * @param timestamp the timestamp of data
    */
   virtual void Parse(const uint32_t message_id, const uint8_t *data,
-                     int32_t length, struct timeval timestamp);
+                     int32_t length);
 
   /**
    * @brief get mutable protocol data by message id
@@ -162,7 +165,7 @@ ProtocolData<SensorType>
         const uint32_t message_id) {
   if (protocol_data_map_.find(message_id) == protocol_data_map_.end()) {
     ADEBUG << "Unable to get protocol data because of invalid message_id:"
-           << message_id;
+           << Byte::byte_to_hex(message_id);
     return nullptr;
   }
   return protocol_data_map_[message_id];
@@ -170,20 +173,15 @@ ProtocolData<SensorType>
 
 template <typename SensorType>
 void MessageManager<SensorType>::Parse(const uint32_t message_id,
-                                       const uint8_t *data, int32_t length,
-                                       struct timeval timestamp) {
+                                       const uint8_t *data, int32_t length) {
   ProtocolData<SensorType> *protocol_data =
       GetMutableProtocolDataById(message_id);
   if (protocol_data == nullptr) {
     return;
   }
-  if (timestamp.tv_sec == static_cast<time_t>(0)) {
+  {
     std::lock_guard<std::mutex> lock(sensor_data_mutex_);
     protocol_data->Parse(data, length, &sensor_data_);
-  } else {
-    // TODO(Authors): only lincoln implemented this virtual function
-    std::lock_guard<std::mutex> lock(sensor_data_mutex_);
-    protocol_data->Parse(data, length, timestamp, &sensor_data_);
   }
   received_ids_.insert(message_id);
   // check if need to check period

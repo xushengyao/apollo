@@ -62,8 +62,10 @@ cc_library(
     deps = [
         ":simulation_world_service",
         "//modules/dreamview/backend/common:dreamview_gflags",
+        "//modules/dreamview/backend/handlers:image",
+        "//modules/dreamview/backend/handlers:websocket",
         "//modules/dreamview/backend/map:map_service",
-        "//modules/dreamview/backend/websocket",
+        "//modules/dreamview/backend/sim_control",
         "@com_google_protobuf//:protobuf",
     ],
 )

@@ -16,6 +16,7 @@ cc_library(
         "//modules/drivers/canbus/proto:canbus_proto",
         "//modules/common/util:factory",
         "//modules/drivers/canbus/can_client/fake:fake_can_client",
+        "//modules/drivers/canbus/can_client/socket:socket_can_client_raw",
     ] + select({
         "//tools/platforms:use_esd_can": [
             "//modules/drivers/canbus/can_client/esd:esd_can_client",
@@ -30,9 +31,9 @@ cc_library(
         "can_client.h",
     ],
     deps = [
+        "//modules/common/util",
         "//modules/drivers/canbus/common:canbus_common",
         "//modules/drivers/canbus/proto:canbus_proto",
-        "//modules/common/util",
     ],
 )
 
@@ -41,9 +42,9 @@ cc_binary(
     srcs = ["can_client_tool.cc"],
     deps = [
         "//external:gflags",
+        "//modules/common",
         "//modules/drivers/canbus/can_client:can_client_factory",
         "//modules/drivers/canbus/proto:canbus_proto",
-        "//modules/common",
     ],
 )
 

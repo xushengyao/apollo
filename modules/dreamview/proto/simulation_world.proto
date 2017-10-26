@@ -5,6 +5,7 @@ package apollo.dreamview;
 import "modules/common/monitor/proto/monitor.proto";
 import "modules/planning/proto/decision.proto";
 import "modules/planning/proto/planning.proto";
+import "modules/planning/proto/planning_internal.proto";
 
 // Next-id: 4
 message PolygonPoint {
@@ -28,7 +29,7 @@ message Decision {
     YIELD = 3; // Go after the object
     OVERTAKE = 4; // Go before the object
     FOLLOW = 5; // Follow the object in the same lane
-    SIDEPASS = 6; // Pass the object in neighbouring lane
+    SIDEPASS = 6; // Pass the object in neighboring lane
   }
   optional Type type = 1 [default = IGNORE];
 
@@ -128,7 +129,7 @@ message Object {
     UNKNOWN = 0;
     UNKNOWN_MOVABLE = 1;
     UNKNOWN_UNMOVABLE = 2;
-    PEDESTRIAN = 3;  // pedestrian, usually determined by moving behaviour.
+    PEDESTRIAN = 3;  // pedestrian, usually determined by moving behavior.
     BICYCLE = 4;  // bike, motor bike.
     VEHICLE = 5;  // passenger car or truck.
     VIRTUAL = 6; // virtual object created by decision module.
@@ -188,4 +189,6 @@ message SimulationWorld {
   optional DelaysInMs delay = 12;
 
   optional .apollo.common.monitor.MonitorMessage monitor = 13;
+
+  optional .apollo.planning_internal.PlanningData planning_data = 14;
 }

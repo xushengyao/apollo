@@ -2,7 +2,6 @@ import devConfig from "store/config/dev.yml";
 import STORE from "store";
 import RENDERER from "renderer";
 
-
 class WebSocketEndpoint {
     constructor(serverAddr) {
         this.serverAddr = serverAddr;
@@ -39,6 +38,9 @@ class WebSocketEndpoint {
                     RENDERER.updateWorld(message.world);
                     STORE.meters.update(message.world);
                     STORE.monitor.update(message.world);
+                    if (STORE.options.showPNCMonitor) {
+                        STORE.planning.update(message.world);
+                    }
                     if (message.mapHash && (this.counter % 10 === 0)) {
                         // NOTE: This is a hack to limit the rate of map updates.
                         this.counter = 0;
@@ -122,6 +124,18 @@ class WebSocketEndpoint {
     requestDefaultRoutingEndPoint() {
         this.websocket.send(JSON.stringify({
             type: "GetDefaultEndPoint",
+        }));
+    }
+
+    resetBackend() {
+        this.websocket.send(JSON.stringify({
+            type: "Reset",
+        }));
+    }
+
+    dumpMessages() {
+        this.websocket.send(JSON.stringify({
+            type: "Dump",
         }));
     }
 }

@@ -17,7 +17,8 @@
 #include "modules/planning/common/planning_gflags.h"
 DEFINE_int32(planning_loop_rate, 10, "Loop rate for planning node");
 
-DEFINE_string(adapter_config_filename, "modules/planning/conf/adapter.conf",
+DEFINE_string(planning_adapter_config_filename,
+              "modules/planning/conf/adapter.conf",
               "The adapter configuration file");
 
 DEFINE_string(rtk_trajectory_filename, "modules/planning/data/garage.csv",
@@ -27,9 +28,8 @@ DEFINE_uint64(rtk_trajectory_forward, 800,
               "The number of points to be included in RTK trajectory "
               "after the matched point");
 
-DEFINE_double(trajectory_resolution, 0.01,
-              "The time resolution of "
-              "output trajectory.");
+DEFINE_double(rtk_trajectory_resolution, 0.01,
+              "The time resolution of output trajectory for rtk planner.");
 
 DEFINE_bool(publish_estop, false, "publish estop decision in planning");
 DEFINE_bool(enable_trajectory_stitcher, true, "enable stitching trajectory");
@@ -39,8 +39,16 @@ DEFINE_double(
     "look backward this distance when creating reference line from routing");
 
 DEFINE_double(
-    look_forward_distance, 100,
+    look_forward_distance, 250,
     "look forward this distance when creating reference line from routing");
+
+DEFINE_double(look_forward_min_distance, 100,
+              "minimal look forward this distance when creating reference line "
+              "from routing");
+DEFINE_double(look_forward_time_sec, 8,
+              "look forward time times adc speed to calculate this distance "
+              "when creating reference line from routing");
+
 DEFINE_bool(enable_smooth_reference_line, true,
             "enable smooth the map reference line");
 
@@ -53,11 +61,15 @@ DEFINE_double(max_collision_distance, 0.1,
 DEFINE_double(replan_distance_threshold, 5.0,
               "The distance threshold of replan");
 
-DEFINE_bool(enable_reference_line_provider_thread, false,
+DEFINE_bool(enable_reference_line_provider_thread, true,
             "Enable reference line provider thread.");
 
 DEFINE_double(default_reference_line_width, 4.0,
               "Default reference line width");
+
+DEFINE_double(smoothed_reference_line_max_diff, 1.0,
+              "Maximum position difference between the smoothed and the raw "
+              "reference lines.");
 
 DEFINE_double(planning_upper_speed_limit, 31.3,
               "Maximum speed (m/s) in planning.");
@@ -65,8 +77,8 @@ DEFINE_double(planning_upper_speed_limit, 31.3,
 DEFINE_double(trajectory_time_length, 8.0, "Trajectory time length");
 DEFINE_double(trajectory_time_resolution, 0.1,
               "Trajectory time resolution in planning");
-DEFINE_double(output_trajectory_time_resolution, 0.05,
-              "Trajectory time resolution when publish");
+DEFINE_double(output_trajectory_time_resolution, 0.01,
+              "Trajectory time resolution when publish for EM planner");
 
 DEFINE_bool(enable_trajectory_check, false,
             "Enable sanity check for planning trajectory.");
@@ -89,7 +101,9 @@ DEFINE_double(longitudinal_jerk_lower_bound, -4.0,
 DEFINE_double(longitudinal_jerk_upper_bound, 4.0,
               "The upper bound of longitudinal jerk.");
 
-DEFINE_double(kappa_bound, 1.00, "The bound for vehicle curvature");
+DEFINE_double(kappa_bound, 0.20, "The bound for vehicle curvature");
+DEFINE_double(dkappa_bound, 0.02,
+              "The bound for vehicle curvature change rate");
 
 // ST Boundary
 DEFINE_double(st_max_s, 100, "the maximum s of st boundary");
