@@ -49,17 +49,14 @@ class ReferenceLineInfo {
 
   bool Init();
 
-  /**
-   * Check if vehicle has reached destination.
-   */
-  bool HasReachedDestination();
-
   bool AddObstacles(const std::vector<const Obstacle*>& obstacles);
   PathObstacle* AddObstacle(const Obstacle* obstacle);
 
   PathDecision* path_decision();
   const PathDecision& path_decision() const;
   const ReferenceLine& reference_line() const;
+  const common::TrajectoryPoint& init_adc_point() const;
+
 
   void SetTrajectory(const DiscretizedTrajectory& trajectory);
 
@@ -99,6 +96,8 @@ class ReferenceLineInfo {
   void ExportDecision(DecisionResult* decision_result) const;
 
  private:
+  void ExportTurnSignal(common::VehicleSignal* signal) const;
+
   std::unique_ptr<PathObstacle> CreatePathObstacle(const Obstacle* obstacle);
   bool InitPerceptionSLBoundary(PathObstacle* path_obstacle);
 

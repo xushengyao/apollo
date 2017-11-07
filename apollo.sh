@@ -97,7 +97,7 @@ function generate_build_targets() {
     fail 'Build failed!'
   fi
   if ! $USE_ESD_CAN; then
-     BUILD_TARGETS=$(echo $BUILD_TARGETS |tr ' ' '\n' | grep -v "hwmonitor" | grep -v "esd")
+     BUILD_TARGETS=$(echo $BUILD_TARGETS |tr ' ' '\n' | grep -v "modules\/monitor\/hwmonitor\/hw\/esdcan" | grep -v "esd")
   fi
 }
 
@@ -440,8 +440,8 @@ function version() {
 
 function build_gnss() {
   CURRENT_PATH=$(pwd)
-  if [ -d "${CURRENT_PATH}/bazel-apollo/external/ros" ]; then
-    ROS_PATH="${CURRENT_PATH}/bazel-apollo/external/ros"
+  if [ -d "/home/tmp/ros" ]; then
+    ROS_PATH="/home/tmp/ros"
   else
     warning "ROS not found. Run apolllo.sh build first."
     exit 1

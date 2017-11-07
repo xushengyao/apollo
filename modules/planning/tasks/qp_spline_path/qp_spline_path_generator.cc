@@ -20,6 +20,7 @@
 #include "modules/planning/tasks/qp_spline_path/qp_spline_path_generator.h"
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
 #include <utility>
 #include <vector>
@@ -123,7 +124,7 @@ bool QpSplinePathGenerator::Generate(
   const Spline1d& spline = spline_generator_->spline();
   std::vector<common::PathPoint> path_points;
 
-  double start_l = 0.0;
+  double start_l = init_frenet_point_.l();
   if (is_solved) {
     start_l = spline(init_frenet_point_.s());
   }
@@ -140,7 +141,7 @@ bool QpSplinePathGenerator::Generate(
       (end_s - init_frenet_point_.s()) / qp_spline_path_config_.num_output();
   constexpr double kEpsilon = std::numeric_limits<double>::epsilon();
   while (s + kEpsilon < end_s) {
-    double l = 0.0;
+    double l = init_frenet_point_.l();
     if (is_solved) {
       l = spline(s);
     }
@@ -235,7 +236,7 @@ bool QpSplinePathGenerator::InitSpline(const double start_s,
   spline_generator_->Reset(knots_, qp_spline_path_config_.spline_order());
 
   // set evaluated_s_
-  uint32_t constraint_num = 3 * number_of_spline + 1;
+  uint32_t constraint_num = 2 * number_of_spline + 1;
   common::util::uniform_slice(start_s, end_s, constraint_num - 1,
                               &evaluated_s_);
   return true;
@@ -249,6 +250,7 @@ bool QpSplinePathGenerator::AddConstraint(
   // add init status constraint, equality constraint
   spline_constraint->AddPointConstraint(init_frenet_point_.s(),
                                         init_frenet_point_.l());
+
   spline_constraint->AddPointDerivativeConstraint(init_frenet_point_.s(),
                                                   init_frenet_point_.dl());
   spline_constraint->AddPointSecondDerivativeConstraint(
@@ -257,16 +259,36 @@ bool QpSplinePathGenerator::AddConstraint(
   ADEBUG << "init frenet point: " << init_frenet_point_.ShortDebugString();
 
   // add end point constraint, equality constraint
-  spline_constraint->AddPointConstraint(evaluated_s_.back(), 0.0);
+  spline_constraint->AddPointConstraint(
+      qp_spline_path_config_.point_constraint_s_position(),
+      std::copysign(
+          std::fmax(0.0,
+                    std::fabs(init_frenet_point_.l()) -
+                        qp_spline_path_config_.lane_change_lateral_shift()),
+          init_frenet_point_.l()));
   spline_constraint->AddPointDerivativeConstraint(evaluated_s_.back(), 0.0);
   spline_constraint->AddPointSecondDerivativeConstraint(evaluated_s_.back(),
                                                         0.0);
+
+  // add first derivative bound to improve lane change smoothness
+  std::vector<double> dl_lower_bound(evaluated_s_.size(), -FLAGS_dl_bound);
+  std::vector<double> dl_upper_bound(evaluated_s_.size(), FLAGS_dl_bound);
+  dl_lower_bound.front() = -FLAGS_dl_bound / 2.0;
+  dl_upper_bound.front() = FLAGS_dl_bound / 2.0;
+
+  if (!spline_constraint->AddDerivativeBoundary(evaluated_s_, dl_lower_bound,
+                                                dl_upper_bound)) {
+    AERROR << "Fail to add second derivative boundary.";
+    return false;
+  }
 
   // kappa bound is based on the inequality:
   // kappa = d(phi)/ds <= d(phi)/dx = d2y/dx2
   std::vector<double> kappa_lower_bound(evaluated_s_.size(),
                                         -FLAGS_kappa_bound);
   std::vector<double> kappa_upper_bound(evaluated_s_.size(), FLAGS_kappa_bound);
+  kappa_lower_bound.front() = -FLAGS_kappa_bound / 5.0;
+  kappa_upper_bound.front() = FLAGS_dkappa_bound / 5.0;
   if (!spline_constraint->AddSecondDerivativeBoundary(
           evaluated_s_, kappa_lower_bound, kappa_upper_bound)) {
     AERROR << "Fail to add second derivative boundary.";
@@ -286,7 +308,7 @@ bool QpSplinePathGenerator::AddConstraint(
 
   // add map bound constraint
   const double lateral_buf =
-      qp_spline_path_config_.cross_lane_extension_buffer();
+      qp_spline_path_config_.cross_lane_lateral_extension();
   std::vector<double> boundary_low;
   std::vector<double> boundary_high;
 
@@ -295,12 +317,12 @@ bool QpSplinePathGenerator::AddConstraint(
     auto static_obs_boundary = qp_frenet_frame.GetStaticObstacleBound().at(i);
     auto dynamic_obs_boundary = qp_frenet_frame.GetDynamicObstacleBound().at(i);
 
-    constexpr double kLength = 50.0;
-    if (evaluated_s_.at(i) < kLength) {
-      road_boundary.first = std::fmin(road_boundary.first,
-                                      adc_sl_boundary_.start_l() - lateral_buf);
-      road_boundary.second = std::fmax(road_boundary.second,
-                                       adc_sl_boundary_.end_l() + lateral_buf);
+    if (evaluated_s_.at(i) - evaluated_s_.at(0) <
+        qp_spline_path_config_.cross_lane_longitudinal_extension()) {
+      road_boundary.first =
+          std::fmin(road_boundary.first, init_frenet_point_.l() - lateral_buf);
+      road_boundary.second =
+          std::fmax(road_boundary.second, init_frenet_point_.l() + lateral_buf);
     }
 
     boundary_low.emplace_back(common::util::MaxElement(
@@ -373,8 +395,10 @@ void QpSplinePathGenerator::AddKernel() {
 
   if (qp_spline_path_config_.reference_line_weight() > 0.0) {
     std::vector<double> ref_l(evaluated_s_.size(), 0.0);
-
-    DCHECK_EQ(evaluated_s_.size(), ref_l.size());
+    const double delta_l = init_frenet_point_.l() / (evaluated_s_.size() - 1);
+    for (uint32_t i = 0; i < ref_l.size(); ++i) {
+      ref_l[i] = delta_l * (evaluated_s_.size() - 1 - i);
+    }
     spline_kernel->AddReferenceLineKernelMatrix(
         evaluated_s_, ref_l, qp_spline_path_config_.reference_line_weight());
   }
@@ -391,16 +415,34 @@ void QpSplinePathGenerator::AddKernel() {
   if (qp_spline_path_config_.derivative_weight() > 0.0) {
     spline_kernel->AddDerivativeKernelMatrix(
         qp_spline_path_config_.derivative_weight());
+    if (std::fabs(init_frenet_point_.l()) >
+        qp_spline_path_config_.lane_change_mid_l()) {
+      spline_kernel->AddDerivativeKernelMatrixForSplineK(
+          0, qp_spline_path_config_.first_spline_weight_factor() *
+                 qp_spline_path_config_.derivative_weight());
+    }
   }
 
   if (qp_spline_path_config_.second_derivative_weight() > 0.0) {
     spline_kernel->AddSecondOrderDerivativeMatrix(
         qp_spline_path_config_.second_derivative_weight());
+    if (std::fabs(init_frenet_point_.l()) >
+        qp_spline_path_config_.lane_change_mid_l()) {
+      spline_kernel->AddSecondOrderDerivativeMatrixForSplineK(
+          0, qp_spline_path_config_.first_spline_weight_factor() *
+                 qp_spline_path_config_.second_derivative_weight());
+    }
   }
 
   if (qp_spline_path_config_.third_derivative_weight() > 0.0) {
     spline_kernel->AddThirdOrderDerivativeMatrix(
         qp_spline_path_config_.third_derivative_weight());
+    if (std::fabs(init_frenet_point_.l()) >
+        qp_spline_path_config_.lane_change_mid_l()) {
+      spline_kernel->AddThirdOrderDerivativeMatrixForSplineK(
+          0, qp_spline_path_config_.first_spline_weight_factor() *
+                 qp_spline_path_config_.third_derivative_weight());
+    }
   }
 }
 

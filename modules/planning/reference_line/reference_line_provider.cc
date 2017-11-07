@@ -32,8 +32,6 @@
 namespace apollo {
 namespace planning {
 
-using apollo::common::VehicleState;
-
 ReferenceLineProvider::ReferenceLineProvider() {}
 
 ReferenceLineProvider::~ReferenceLineProvider() {
@@ -44,7 +42,7 @@ ReferenceLineProvider::~ReferenceLineProvider() {
 
 void ReferenceLineProvider::Init(
     const hdmap::HDMap *hdmap_,
-    const ReferenceLineSmootherConfig &smoother_config) {
+    const QpSplineReferenceLineSmootherConfig &smoother_config) {
   pnc_map_.reset(new hdmap::PncMap(hdmap_));
   smoother_config_ = smoother_config;
   std::vector<double> init_t_knots;
@@ -57,6 +55,18 @@ void ReferenceLineProvider::UpdateRoutingResponse(
   std::lock_guard<std::mutex> lock(pnc_map_mutex_);
   pnc_map_->UpdateRoutingResponse(routing);
   has_routing_ = true;
+}
+
+bool ReferenceLineProvider::UpdateVehicleStatus(
+    const common::PointENU &position, double speed) {
+  std::lock_guard<std::mutex> lock(pnc_map_mutex_);
+  vehicle_speed_ = speed;
+  if (!pnc_map_->UpdatePosition(position)) {
+    AERROR << "Failed to update pnc_map position: "
+           << position.ShortDebugString();
+    return false;
+  }
+  return true;
 }
 
 bool ReferenceLineProvider::Start() {
@@ -77,10 +87,6 @@ void ReferenceLineProvider::Stop() {
 
 void ReferenceLineProvider::Generate() {
   while (!is_stop_) {
-    const auto &curr_adc_position =
-        common::VehicleState::instance()->pose().position();
-    const auto adc_point_enu = common::util::MakePointENU(
-        curr_adc_position.x(), curr_adc_position.y(), curr_adc_position.z());
     if (!has_routing_) {
       AERROR << "Routing is not ready.";
       constexpr int32_t kRoutingNotReadySleepTimeMs = 500;  // milliseconds
@@ -88,15 +94,11 @@ void ReferenceLineProvider::Generate() {
           kRoutingNotReadySleepTimeMs));
       continue;
     }
-    if (!CreateReferenceLineFromRouting(adc_point_enu)) {
-      AERROR << "Fail to create reference line at position: "
-             << curr_adc_position.ShortDebugString();
+    if (!CreateReferenceLineFromRouting()) {
+      AERROR << "Fail to get reference line";
     }
-    ADEBUG << "ReferenceLine smoothed with adc position: "
-           << curr_adc_position.ShortDebugString();
-
     constexpr int32_t kReferenceLineProviderSleepTime = 200;
-    std::this_thread::sleep_for(std::chrono::duration<double, std::milli>(
+    std::this_thread::sleep_for(std::chrono::duration<int32_t, std::milli>(
         kReferenceLineProviderSleepTime));
   }
 }
@@ -127,26 +129,30 @@ bool ReferenceLineProvider::GetReferenceLines(
   return true;
 }
 
-bool ReferenceLineProvider::CreateReferenceLineFromRouting(
-    const common::PointENU &position) {
+bool ReferenceLineProvider::CreateReferenceLineFromRouting() {
   std::vector<hdmap::RouteSegments> route_segments;
 
-  const auto &adc_speed = common::VehicleState::instance()->linear_velocity();
-  double look_forward_distance = (adc_speed * FLAGS_look_forward_time_sec >
+  double look_forward_distance = (vehicle_speed_ * FLAGS_look_forward_time_sec >
                                   FLAGS_look_forward_min_distance)
                                      ? FLAGS_look_forward_distance
                                      : FLAGS_look_forward_min_distance;
   {
     std::lock_guard<std::mutex> lock(pnc_map_mutex_);
-    if (!pnc_map_->GetRouteSegments(position, FLAGS_look_backward_distance,
+    if (!pnc_map_->GetRouteSegments(FLAGS_look_backward_distance,
                                     look_forward_distance, &route_segments)) {
       AERROR << "Failed to extract segments from routing";
       return false;
     }
   }
 
-  ReferenceLineSmoother smoother;
-  smoother.Init(smoother_config_);
+  std::unique_ptr<ReferenceLineSmoother> smoother;
+  if (FLAGS_enable_spiral_reference_line) {
+    double max_deviation = FLAGS_spiral_smoother_max_deviation;
+    smoother.reset(new SpiralReferenceLineSmoother(max_deviation));
+  } else {
+    smoother.reset(new QpSplineReferenceLineSmoother(smoother_config_,
+                                                     spline_solver_.get()));
+  }
 
   std::vector<ReferenceLine> reference_lines;
   std::vector<hdmap::RouteSegments> segments;
@@ -156,8 +162,7 @@ bool ReferenceLineProvider::CreateReferenceLineFromRouting(
     if (FLAGS_enable_smooth_reference_line) {
       ReferenceLine raw_reference_line(hdmap_path);
       ReferenceLine reference_line;
-      if (!smoother.Smooth(raw_reference_line, &reference_line,
-                           spline_solver_.get())) {
+      if (!smoother->Smooth(raw_reference_line, &reference_line)) {
         AERROR << "Failed to smooth reference line";
         continue;
       }

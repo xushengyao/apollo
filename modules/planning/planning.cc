@@ -131,7 +131,7 @@ Status Planning::Init() {
   }
   if (FLAGS_enable_reference_line_provider_thread) {
     ReferenceLineProvider::instance()->Init(
-        hdmap_, config_.reference_line_smoother_config());
+        hdmap_, config_.qp_spline_reference_line_smoother_config());
   }
 
   RegisterPlanners();
@@ -173,6 +173,11 @@ void Planning::PublishPlanningPb(ADCTrajectory* trajectory_pb,
   trajectory_pb->mutable_header()->set_timestamp_sec(timestamp);
   // TODO(all): integrate reverse gear
   trajectory_pb->set_gear(canbus::Chassis::GEAR_DRIVE);
+
+  if (frame_) {
+    trajectory_pb->mutable_routing_header()->CopyFrom(
+        frame_->routing_response().header());
+  }
   AdapterManager::PublishPlanning(*trajectory_pb);
 }
 
@@ -222,6 +227,9 @@ void Planning::RunOnce() {
   if (FLAGS_enable_reference_line_provider_thread) {
     ReferenceLineProvider::instance()->UpdateRoutingResponse(
         AdapterManager::GetRoutingResponse()->GetLatestObserved());
+    ReferenceLineProvider::instance()->UpdateVehicleStatus(
+        common::VehicleState::instance()->pose().position(),
+        common::VehicleState::instance()->linear_velocity());
     if (!ReferenceLineProvider::instance()->HasReferenceLine()) {
       not_ready->set_reason("reference line not ready");
       AERROR << not_ready->reason() << "; skip the planning cycle.";
@@ -270,16 +278,19 @@ void Planning::RunOnce() {
   trajectory_pb.mutable_latency_stats()->set_total_time_ms(time_diff_ms);
   ADEBUG << "Planning latency: " << trajectory_pb.latency_stats().DebugString();
 
-  if (status.ok()) {
-    trajectory_pb.set_is_replan(is_replan);
-    PublishPlanningPb(&trajectory_pb, start_timestamp);
-    ADEBUG << "Planning succeeded:" << trajectory_pb.header().DebugString();
-  } else if (FLAGS_publish_estop) {
-    trajectory_pb.mutable_estop();
+  if (!status.ok()) {
     status.Save(trajectory_pb.mutable_header()->mutable_status());
-    PublishPlanningPb(&trajectory_pb, start_timestamp);
-    AERROR << "Planning failed";
+    AERROR << "Planning failed:" << status.ToString();
+    if (FLAGS_publish_estop) {
+      AERROR << "Planning failed and set estop";
+      trajectory_pb.mutable_estop();
+    }
   }
+
+  trajectory_pb.set_is_replan(is_replan);
+  PublishPlanningPb(&trajectory_pb, start_timestamp);
+  ADEBUG << "Planning pb:" << trajectory_pb.header().DebugString();
+
   if (frame_) {
     auto seq_num = frame_->SequenceNum();
     FrameHistory::instance()->Add(seq_num, std::move(frame_));
@@ -314,7 +325,8 @@ common::Status Planning::Plan(
   for (auto& reference_line_info : frame_->reference_line_info()) {
     status = planner_->Plan(stitching_trajectory.back(), frame_.get(),
                             &reference_line_info);
-    AERROR_IF(!status.ok()) << "planner failed to make a driving plan.";
+    AERROR_IF(!status.ok()) << "planner failed to make a driving plan for: "
+                            << reference_line_info.Lanes().Id();
   }
 
   const auto* best_reference_line = frame_->FindDriveReferenceLineInfo();

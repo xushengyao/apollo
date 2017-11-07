@@ -2,31 +2,24 @@ load("//tools:cpplint.bzl", "cpplint")
 
 package(default_visibility = ["//visibility:public"])
 
-cc_inc_library(
-    name = "hw_checker",
-    hdrs = [
-        "hw_checker.h",
-        "annotations.h",
-    ],
+cc_library(
+    name = "recurrent_runner",
+    srcs = ["recurrent_runner.cc"],
+    hdrs = ["recurrent_runner.h"],
     deps = [
-        "//modules/monitor/proto:hardware_status_proto",
-    ]
+        "//modules/common:log",
+        "//modules/common/time",
+        "//modules/monitor/proto:system_status_proto",
+    ],
 )
 
 cc_library(
-    name = "log",
-    srcs = ["log.cc"],
-    hdrs = [
-        "log.h",
-        "common_defs.h",
-    ],
-)
-
-cc_binary(
-    name = "log_test",
-    srcs = ["log_test.cc"],
+    name = "monitor_interface",
+    srcs = ["monitor_interface.cc"],
+    hdrs = ["monitor_interface.h"],
     deps = [
-        ":log",
+        ":recurrent_runner",
+        "//modules/monitor/proto:system_status_proto",
     ],
 )
 

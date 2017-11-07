@@ -24,19 +24,31 @@
 #include <iomanip>
 #include <utility>
 
-#include "glog/logging.h"
 #include "IpIpoptApplication.hpp"
 #include "IpSolveStatistics.hpp"
+#include "glog/logging.h"
+
+#include "modules/common/time/time.h"
+#include "modules/planning/common/planning_gflags.h"
 #include "modules/planning/math/curve1d/quintic_spiral_path.h"
 #include "modules/planning/reference_line/spiral_problem_interface.h"
 
 namespace apollo {
 namespace planning {
 
+using apollo::common::time::Clock;
+
+SpiralReferenceLineSmoother::SpiralReferenceLineSmoother(
+    const double max_point_deviation)
+    : max_point_deviation_(max_point_deviation) {
+  CHECK(max_point_deviation >= 0.0);
+}
+
 bool SpiralReferenceLineSmoother::Smooth(
     const ReferenceLine& raw_reference_line,
-    ReferenceLine* const smoothed_reference_line) const {
-  const double piecewise_length = 10.0;
+    ReferenceLine* const smoothed_reference_line) {
+  const double start_timestamp = Clock::NowInSecond();
+  const double piecewise_length = FLAGS_spiral_smoother_piecewise_length;
   const double length = raw_reference_line.Length();
   ADEBUG << "Length = " << length;
   uint32_t num_of_pieces =
@@ -46,10 +58,10 @@ bool SpiralReferenceLineSmoother::Smooth(
   double s = 0.0;
 
   std::vector<Eigen::Vector2d> raw_point2d;
-  for (std::uint32_t i = 0; i <= num_of_pieces; ++i) {
+  for (std::uint32_t i = 0; i <= num_of_pieces;
+       ++i, s = std::fmin(s + delta_s, length)) {
     ReferencePoint rlp = raw_reference_line.GetReferencePoint(s);
     raw_point2d.emplace_back(rlp.x(), rlp.y());
-    s += delta_s;
   }
 
   std::vector<common::PathPoint> smoothed_point2d;
@@ -83,6 +95,10 @@ bool SpiralReferenceLineSmoother::Smooth(
     return false;
   }
   *smoothed_reference_line = ReferenceLine(ref_points);
+  const double end_timestamp = Clock::NowInSecond();
+  ADEBUG << "Spiral reference line smoother time: "
+         << (end_timestamp - start_timestamp) * 1000 << " ms.";
+
   return true;
 }
 
@@ -106,17 +122,17 @@ bool SpiralReferenceLineSmoother::Smooth(
   //  app->Options()->SetNumericValue("derivative_test_perturbation", 1.0e-7);
   //  app->Options()->SetStringValue("derivative_test", "second-order");
   app->Options()->SetIntegerValue("print_level", 0);
-  app->Options()->SetIntegerValue("max_iter", 1000);
+  int num_iterations = FLAGS_spiral_smoother_num_iteration;
+  app->Options()->SetIntegerValue("max_iter", num_iterations);
 
   //  app->Options()->SetNumericValue("acceptable_tol", 0.5);
   //  app->Options()->SetNumericValue("acceptable_obj_change_tol", 0.5);
   //  app->Options()->SetNumericValue("constr_viol_tol", 0.01);
   //  app->Options()->SetIntegerValue("acceptable_iter", 10);
   //  app->Options()->SetIntegerValue("print_level", 0);
-  // app->Options()->SetStringValue("fast_step_computation", "yes");
+  //  app->Options()->SetStringValue("fast_step_computation", "yes");
 
-  Ipopt::ApplicationReturnStatus status;
-  status = app->Initialize();
+  Ipopt::ApplicationReturnStatus status = app->Initialize();
   if (status != Ipopt::Solve_Succeeded) {
     ADEBUG << "*** Error during initialization!";
     return static_cast<int>(status);
@@ -131,8 +147,8 @@ bool SpiralReferenceLineSmoother::Smooth(
     ADEBUG << "*** The problem solved in " << iter_count << " iterations!";
 
     Ipopt::Number final_obj = app->Statistics()->FinalObjective();
-    ADEBUG
-    << "*** The final value of the objective function is " << final_obj << '.';
+    ADEBUG << "*** The final value of the objective function is " << final_obj
+           << '.';
   } else {
     ADEBUG << "Return status: " << int(status);
   }
@@ -166,15 +182,8 @@ bool SpiralReferenceLineSmoother::Smooth(
     start_s = ptr_smoothed_point2d->back().s();
   }
 
-  if (status == Ipopt::Solve_Succeeded ||
-      status == Ipopt::Solved_To_Acceptable_Level)
-    return true;
-  return false;
-}
-
-void SpiralReferenceLineSmoother::set_max_point_deviation(const double d) {
-  CHECK(d >= 0.0);
-  max_point_deviation_ = d;
+  return status == Ipopt::Solve_Succeeded ||
+         status == Ipopt::Solved_To_Acceptable_Level;
 }
 
 std::vector<common::PathPoint> SpiralReferenceLineSmoother::to_path_points(
@@ -188,13 +197,14 @@ std::vector<common::PathPoint> SpiralReferenceLineSmoother::to_path_points(
                                  dkappa1, delta_s);
   std::size_t num_of_points = std::ceil(delta_s / resolution) + 1;
   for (std::size_t i = 1; i <= num_of_points; ++i) {
-    double inter_s = delta_s / num_of_points * i;
-    double dx = spiral_curve.ComputeCartesianDeviationX<10>(inter_s);
-    double dy = spiral_curve.ComputeCartesianDeviationY<10>(inter_s);
+    const double inter_s = delta_s / num_of_points * i;
+    const double dx = spiral_curve.ComputeCartesianDeviationX<10>(inter_s);
+    const double dy = spiral_curve.ComputeCartesianDeviationY<10>(inter_s);
 
-    double theta = spiral_curve.Evaluate(0, inter_s);  // need to be normalized.
-    double kappa = spiral_curve.Evaluate(1, inter_s);
-    double dkappa = spiral_curve.Evaluate(2, inter_s);
+    const double theta =
+        spiral_curve.Evaluate(0, inter_s);  // need to be normalized.
+    const double kappa = spiral_curve.Evaluate(1, inter_s);
+    const double dkappa = spiral_curve.Evaluate(2, inter_s);
 
     auto path_point = to_path_point(start_x + dx, start_y + dy,
                                     start_s + inter_s, theta, kappa, dkappa);

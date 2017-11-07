@@ -37,8 +37,8 @@
 #include "modules/map/hdmap/hdmap_util.h"
 #include "modules/map/pnc_map/pnc_map.h"
 #include "modules/planning/common/planning_gflags.h"
+#include "modules/planning/reference_line/qp_spline_reference_line_smoother.h"
 #include "modules/planning/reference_line/reference_line_provider.h"
-#include "modules/planning/reference_line/reference_line_smoother.h"
 
 namespace apollo {
 namespace planning {
@@ -77,8 +77,7 @@ void Frame::SetPrediction(const prediction::PredictionObstacles &prediction) {
 void Frame::CreatePredictionObstacles(
     const prediction::PredictionObstacles &prediction) {
   for (auto &ptr : Obstacle::CreateObstacles(prediction)) {
-    auto id(ptr->Id());
-    obstacles_.Add(id, *ptr);
+    AddObstacle(*ptr);
   }
 }
 
@@ -199,11 +198,14 @@ const Obstacle *Frame::CreateDestinationObstacle() {
       std::max(0.0, routing_end.s() - FLAGS_virtual_stop_wall_length -
                         FLAGS_stop_distance_destination);
   auto dest_point = lane->GetSmoothPoint(dest_lane_s);
+  double left_width = 0.0;
+  double right_width = 0.0;
+  lane->GetWidth(dest_lane_s, &left_width, &right_width);
   // check if destination point is in planning range
   common::math::Box2d destination_box{{dest_point.x(), dest_point.y()},
                                       lane->Heading(dest_lane_s),
                                       FLAGS_virtual_stop_wall_length,
-                                      FLAGS_virtual_stop_wall_width};
+                                      left_width + right_width};
   return AddStaticVirtualObstacle(FLAGS_destination_obstacle_id,
                                   destination_box);
 }
@@ -219,7 +221,7 @@ Status Frame::Init(const PlanningConfig &config,
     AERROR << "init point is not set";
     return Status(ErrorCode::PLANNING_ERROR, "init point is not set");
   }
-  smoother_config_ = config.reference_line_smoother_config();
+  smoother_config_ = config.qp_spline_reference_line_smoother_config();
 
   ADEBUG << "Enabled align prediction time ? : " << std::boolalpha
          << FLAGS_align_prediction_time;
@@ -284,25 +286,34 @@ bool Frame::CreateReferenceLineFromRouting(
                                      ? FLAGS_look_forward_distance
                                      : FLAGS_look_forward_min_distance;
 
-  if (!pnc_map_->GetRouteSegments(position, FLAGS_look_backward_distance,
-                                  look_forward_distance,
-                                  &route_segments)) {
+  if (!pnc_map_->UpdatePosition(position)) {
+    AERROR << "Failed to update position: " << position.ShortDebugString()
+           << " in pnc map.";
+    return false;
+  }
+  if (!pnc_map_->GetRouteSegments(FLAGS_look_backward_distance,
+                                  look_forward_distance, &route_segments)) {
     AERROR << "Failed to extract segments from routing";
     return false;
   }
 
-  ReferenceLineSmoother smoother;
-  smoother.Init(smoother_config_);
+  std::unique_ptr<ReferenceLineSmoother> smoother;
+  std::vector<double> init_t_knots;
+  Spline2dSolver spline_solver(init_t_knots, smoother_config_.spline_order());
+  if (FLAGS_enable_spiral_reference_line) {
+    double max_deviation = 0.1;
+    smoother.reset(new SpiralReferenceLineSmoother(max_deviation));
+  } else {
+    smoother.reset(
+        new QpSplineReferenceLineSmoother(smoother_config_, &spline_solver));
+  }
 
   for (const auto &each_segments : route_segments) {
     hdmap::Path hdmap_path;
     hdmap::PncMap::CreatePathFromLaneSegments(each_segments, &hdmap_path);
     if (FLAGS_enable_smooth_reference_line) {
       ReferenceLine reference_line;
-      std::vector<double> init_t_knots;
-      Spline2dSolver spline_solver(init_t_knots, 5);
-      if (!smoother.Smooth(ReferenceLine(hdmap_path), &reference_line,
-                           &spline_solver)) {
+      if (!smoother->Smooth(ReferenceLine(hdmap_path), &reference_line)) {
         AERROR << "Failed to smooth reference line";
         continue;
       }

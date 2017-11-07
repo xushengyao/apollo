@@ -31,6 +31,7 @@ using apollo::common::Point3D;
 using apollo::common::Quaternion;
 using apollo::common::TrajectoryPoint;
 using apollo::common::adapter::AdapterManager;
+using apollo::common::Header;
 using apollo::common::math::HeadingToQuaternion;
 using apollo::common::math::InverseQuaternionRotate;
 using apollo::common::math::NormalizeAngle;
@@ -51,6 +52,11 @@ void TransformToVRF(const Point3D& point_mrf, const Quaternion& orientation,
   point_vrf->set_z(v_vrf.z());
 }
 
+bool CompareHeader(const Header& lhs, const Header& rhs) {
+  return lhs.sequence_num() == rhs.sequence_num() &&
+         lhs.timestamp_sec() == rhs.timestamp_sec();
+}
+
 }  // namespace
 
 SimControl::SimControl(const MapService* map_service)
@@ -58,6 +64,7 @@ SimControl::SimControl(const MapService* map_service)
       prev_point_index_(0),
       next_point_index_(0),
       received_planning_(false),
+      planning_count_(-1),
       enabled_(FLAGS_enable_sim_control) {}
 
 void SimControl::Init(bool set_start_point) {
@@ -105,10 +112,22 @@ void SimControl::SetStartPoint(const double x, const double y) {
   Start();
 }
 
+void SimControl::ClearPlanning() {
+  current_trajectory_.Clear();
+  received_planning_ = false;
+  planning_count_ = 0;
+}
+
 void SimControl::OnRoutingResponse(const RoutingResponse& routing) {
-  DCHECK_LE(2, routing.routing_request().waypoint_size());
+  CHECK_LE(2, routing.routing_request().waypoint_size());
   const auto& start_pose = routing.routing_request().waypoint(0).pose();
-  SetStartPoint(start_pose.x(), start_pose.y());
+
+  // If this is from a planning re-routing request, don't reset car's location.
+  if (routing.routing_request().header().module_name() != "planning") {
+    current_routing_header_ = routing.header();
+    ClearPlanning();
+    SetStartPoint(start_pose.x(), start_pose.y());
+  }
 }
 
 void SimControl::Start() {
@@ -123,10 +142,21 @@ void SimControl::Stop() {
 
 void SimControl::OnPlanning(const apollo::planning::ADCTrajectory& trajectory) {
   // Reset current trajectory and the indices upon receiving a new trajectory.
-  current_trajectory_ = trajectory;
-  prev_point_index_ = 0;
-  next_point_index_ = 0;
-  received_planning_ = true;
+  // The routing SimControl owns must match with the one Planning has.
+  if (CompareHeader(trajectory.routing_header(), current_routing_header_)) {
+    // Hold a few cycles until the position information is fully refreshed on
+    // planning side. Don't wait for the very first planning received.
+    ++planning_count_;
+    if (planning_count_ == 0 || planning_count_ >= kPlanningCountToStart) {
+      planning_count_ = kPlanningCountToStart;
+      current_trajectory_ = trajectory;
+      prev_point_index_ = 0;
+      next_point_index_ = 0;
+      received_planning_ = true;
+    }
+  } else {
+    ClearPlanning();
+  }
 }
 
 void SimControl::Freeze() {

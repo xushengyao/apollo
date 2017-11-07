@@ -52,6 +52,15 @@ DEFINE_double(look_forward_time_sec, 8,
 DEFINE_bool(enable_smooth_reference_line, true,
             "enable smooth the map reference line");
 
+DEFINE_bool(enable_spiral_reference_line, false,
+            "enable new spiral based reference line");
+DEFINE_double(spiral_smoother_max_deviation, 0.1,
+              "The max deviation of spiral reference line smoother.");
+DEFINE_int32(spiral_smoother_num_iteration, 1000,
+             "The iteration num of spiral reference line smoother.");
+DEFINE_double(spiral_smoother_piecewise_length, 10.0,
+              "The piecewise length of spiral smoother.");
+
 DEFINE_int32(max_history_frame_num, 5, "The maximum history frame number");
 
 DEFINE_double(max_collision_distance, 0.1,
@@ -101,6 +110,8 @@ DEFINE_double(longitudinal_jerk_lower_bound, -4.0,
 DEFINE_double(longitudinal_jerk_upper_bound, 4.0,
               "The upper bound of longitudinal jerk.");
 
+DEFINE_double(dl_bound, 0.10,
+              "The bound for derivative l in s-l coordinate system.");
 DEFINE_double(kappa_bound, 0.20, "The bound for vehicle curvature");
 DEFINE_double(dkappa_bound, 0.02,
               "The bound for vehicle curvature change rate");
@@ -122,12 +133,15 @@ DEFINE_double(stop_distance_obstacle, 10.0,
               "stop distance from in-lane obstacle (meters)");
 DEFINE_double(stop_distance_destination, 3.0,
               "stop distance from destination line");
+DEFINE_double(destination_check_distance, 5.0,
+              "if the distance between destination and ADC is less than this,"
+              " it is considered to reach destination");
 DEFINE_double(nudge_distance_obstacle, 0.3,
               "minimum distance to nudge a obstacle (meters)");
 DEFINE_double(follow_min_distance, 10,
               "min follow distance for vehicles/bicycles/moving objects");
 DEFINE_double(
-    follow_time_buffer, 4.0,
+    follow_time_buffer, 2.0,
     "follow time buffer (in second) to calculate the following distance.");
 
 DEFINE_string(destination_obstacle_id, "DEST",
@@ -174,6 +188,10 @@ DEFINE_double(crosswalk_strick_l_distance, 4.0,
               "strick stop rule within this l_distance");
 DEFINE_double(crosswalk_loose_l_distance, 5.0,
               "loose stop rule beyond this l_distance");
+
+DEFINE_double(
+    turn_signal_distance, 80,
+    "meters. If there is a turn within this distance, use turn signal");
 
 // planning config file
 DEFINE_string(planning_config_file,
