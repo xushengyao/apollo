@@ -124,7 +124,7 @@ SimulationWorldUpdater::SimulationWorldUpdater(WebSocketHandler *websocket,
 
         Json poi_list = Json::array();
         if (LoadPOI()) {
-          for (const auto& landmark : poi_.landmark()) {
+          for (const auto &landmark : poi_.landmark()) {
             Json place;
             place["name"] = landmark.name();
             place["x"] = landmark.waypoint().pose().x();
@@ -176,6 +176,11 @@ bool SimulationWorldUpdater::ConstructRoutingRequest(
     auto *waypoint = routing_request->mutable_waypoint();
     for (size_t i = 0; i < iter->size(); ++i) {
       auto &point = (*iter)[i];
+      if (point.find("x") == point.end() || point.find("y") == point.end()) {
+        AERROR << "Failed to prepare a routing request: waypoint not found";
+        return false;
+      }
+
       if (!map_service_->ConstructLaneWayPoint(point["x"], point["y"],
                                                waypoint->Add())) {
         waypoint->RemoveLast();
@@ -216,7 +221,7 @@ void SimulationWorldUpdater::OnTimer(const ros::TimerEvent &event) {
     boost::unique_lock<boost::shared_mutex> writer_lock(mutex_);
 
     simulation_world_json_ =
-        sim_world_service_.GetUpdateAsJson(FLAGS_map_radius).dump();
+        sim_world_service_.GetUpdateAsJson(FLAGS_sim_map_radius).dump();
   }
 }
 

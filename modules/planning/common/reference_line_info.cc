@@ -43,18 +43,18 @@ using apollo::common::TrajectoryPoint;
 using apollo::common::VehicleConfigHelper;
 using apollo::common::VehicleSignal;
 
-ReferenceLineInfo::ReferenceLineInfo(const hdmap::PncMap* pnc_map,
+ReferenceLineInfo::ReferenceLineInfo(const common::VehicleState& vehicle_state,
+                                     const TrajectoryPoint& adc_planning_point,
                                      const ReferenceLine& reference_line,
-                                     const hdmap::RouteSegments& segments,
-                                     const TrajectoryPoint& init_adc_point)
-    : pnc_map_(pnc_map),
+                                     const hdmap::RouteSegments& segments)
+    : vehicle_state_(vehicle_state),
+      adc_planning_point_(adc_planning_point),
       reference_line_(reference_line),
-      init_adc_point_(init_adc_point),
       lanes_(segments) {}
 
 bool ReferenceLineInfo::Init() {
   const auto& param = VehicleConfigHelper::GetConfig().vehicle_param();
-  const auto& path_point = init_adc_point_.path_point();
+  const auto& path_point = adc_planning_point_.path_point();
   Vec2d position(path_point.x(), path_point.y());
   Vec2d vec_to_center(
       (param.left_edge_to_center() - param.right_edge_to_center()) / 2.0,
@@ -80,8 +80,8 @@ PathDecision* ReferenceLineInfo::path_decision() { return &path_decision_; }
 const PathDecision& ReferenceLineInfo::path_decision() const {
   return path_decision_;
 }
-const common::TrajectoryPoint& ReferenceLineInfo::init_adc_point() const {
-  return init_adc_point_;
+const common::TrajectoryPoint& ReferenceLineInfo::AdcPlanningPoint() const {
+  return adc_planning_point_;
 }
 
 const ReferenceLine& ReferenceLineInfo::reference_line() const {
@@ -186,6 +186,14 @@ bool ReferenceLineInfo::CombinePathAndSpeedProfile(
   return true;
 }
 
+void ReferenceLineInfo::SetDriable(bool drivable) { is_drivable_ = drivable; }
+
+bool ReferenceLineInfo::IsDrivable() const { return is_drivable_; }
+
+bool ReferenceLineInfo::IsChangeLanePath() const {
+  return !Lanes().IsOnSegment();
+}
+
 std::string ReferenceLineInfo::PathSpeedDebugString() const {
   return apollo::common::util::StrCat("path_data:", path_data_.DebugString(),
                                       "speed_data:", speed_data_.DebugString());
@@ -241,6 +249,24 @@ void ReferenceLineInfo::ExportTurnSignal(VehicleSignal* signal) const {
       break;
     }
   }
+}
+
+bool ReferenceLineInfo::ReachedDestination() const {
+  constexpr double kDestinationDeltaS = 2.0;
+  const auto* dest_ptr = path_decision_.Find(FLAGS_destination_obstacle_id);
+  if (!dest_ptr) {
+    return false;
+  }
+  if (!dest_ptr->LongitudinalDecision().has_stop()) {
+    return false;
+  }
+  if (!reference_line_.IsOnRoad(
+          dest_ptr->obstacle()->PerceptionBoundingBox().center())) {
+    return false;
+  }
+  const double stop_s = dest_ptr->perception_sl_boundary().start_s() +
+                        dest_ptr->LongitudinalDecision().stop().distance_s();
+  return adc_sl_boundary_.end_s() + kDestinationDeltaS > stop_s;
 }
 
 void ReferenceLineInfo::ExportDecision(DecisionResult* decision_result) const {

@@ -265,8 +265,9 @@ PncMap::PncMap(const HDMap *hdmap) : hdmap_(hdmap) {}
 
 const hdmap::HDMap *PncMap::hdmap() const { return hdmap_; }
 
-bool PncMap::UpdatePosition(const common::PointENU &point) {
-  if (!GetNearestPointFromRouting(point, &current_waypoint_)) {
+bool PncMap::UpdateVehicleState(const common::VehicleState &state) {
+  auto point = common::util::MakePointENU(state.x(), state.y(), state.z());
+  if (!GetNearestPointFromRouting(state, &current_waypoint_)) {
     AERROR << "Failed to get waypoint from routing";
     return false;
   }
@@ -301,7 +302,7 @@ bool PncMap::UpdateRoutingResponse(const routing::RoutingResponse &routing) {
       (std::fabs(routing_.header().timestamp_sec() -
                  routing.header().timestamp_sec()) < 0.1)) {
     ADEBUG << "Same routing, skip update routing";
-    return false;
+    return true;
   }
   if (!ValidateRouting(routing)) {
     AERROR << "Invalid routing";
@@ -364,7 +365,8 @@ bool PncMap::PassageToSegments(routing::Passage passage,
       AERROR << "Failed to find lane : " << lane.id();
       return false;
     }
-    segments->emplace_back(lane_ptr, lane.start_s(), lane.end_s());
+    segments->emplace_back(lane_ptr, std::max(0.0, lane.start_s()),
+                           std::min(lane_ptr->total_length(), lane.end_s()));
   }
   return !segments->empty();
 }
@@ -431,7 +433,7 @@ bool PncMap::GetRouteSegments(
   // vehicle has to be this close to lane center before considering change lane
   if (!current_waypoint_.lane || route_index_.size() != 3 ||
       route_index_[0] < 0) {
-    AERROR << "Invalid position, use UpdatePosition() function first";
+    AERROR << "Invalid position, use UpdateVehicleState() function first";
     return false;
   }
   const int road_index = route_index_[0];
@@ -499,18 +501,21 @@ bool PncMap::GetRouteSegments(
   return !route_segments->empty();
 }
 
-bool PncMap::GetNearestPointFromRouting(const common::PointENU &point,
+bool PncMap::GetNearestPointFromRouting(const common::VehicleState &state,
                                         LaneWaypoint *waypoint) const {
-  const double kMaxDistance = 20.0;  // meters.
+  const double kMaxDistance = 10.0;  // meters.
   waypoint->lane = nullptr;
   std::vector<LaneInfoConstPtr> lanes;
-  const int status = hdmap_->GetLanes(point, kMaxDistance, &lanes);
+  auto point = common::util::MakePointENU(state.x(), state.y(), state.z());
+  const int status = hdmap_->GetLanesWithHeading(
+      point, kMaxDistance, state.heading(), M_PI / 2.0, &lanes);
   if (status < 0) {
     AERROR << "failed to get lane from point " << point.DebugString();
     return false;
   }
   if (lanes.empty()) {
-    AERROR << "No valid lane found within " << kMaxDistance << " meters.";
+    AERROR << "No valid lane found within " << kMaxDistance
+           << " meters with heading " << state.heading();
     return false;
   }
   // get nearest_wayponints for current position

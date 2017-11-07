@@ -59,12 +59,12 @@ bool QpSplineReferenceLineSmoother::Smooth(
 
   spline_solver_->Reset(t_knots_, smoother_config_.spline_order());
 
-  if (!ApplyConstraint(raw_reference_line)) {
+  if (!AddConstraint(raw_reference_line)) {
     AERROR << "Add constraint for spline smoother failed";
     return false;
   }
 
-  if (!ApplyKernel()) {
+  if (!AddKernel()) {
     AERROR << "Add kernel for spline smoother failed.";
     return false;
   }
@@ -84,22 +84,24 @@ bool QpSplineReferenceLineSmoother::Smooth(
   for (std::uint32_t i = 0;
        i < smoother_config_.num_of_total_points() && t < end_t;
        ++i, t += resolution) {
-    std::pair<double, double> xy = spline(t);
-    const double heading = std::atan2(spline_solver_->spline().derivative_y(t),
+    const double heading = std::atan2(spline_solver_->spline().DerivativeY(t),
                                       spline_solver_->spline().DerivativeX(t));
     const double kappa = CurveMath::ComputeCurvature(
         spline_solver_->spline().DerivativeX(t),
         spline_solver_->spline().SecondDerivativeX(t),
-        spline_solver_->spline().derivative_y(t),
-        spline_solver_->spline().second_derivative_y(t));
+        spline_solver_->spline().DerivativeY(t),
+        spline_solver_->spline().SecondDerivativeY(t));
     const double dkappa = CurveMath::ComputeCurvatureDerivative(
         spline_solver_->spline().DerivativeX(t),
         spline_solver_->spline().SecondDerivativeX(t),
         spline_solver_->spline().ThirdDerivativeX(t),
-        spline_solver_->spline().derivative_y(t),
-        spline_solver_->spline().second_derivative_y(t),
-        spline_solver_->spline().third_derivative_y(t));
+        spline_solver_->spline().DerivativeY(t),
+        spline_solver_->spline().SecondDerivativeY(t),
+        spline_solver_->spline().ThirdDerivativeY(t));
 
+    std::pair<double, double> xy = spline(t);
+    xy.first += ref_x_;
+    xy.second += ref_y_;
     common::SLPoint ref_sl_point;
     if (!raw_reference_line.XYToSL({xy.first, xy.second}, &ref_sl_point)) {
       return false;
@@ -135,9 +137,13 @@ bool QpSplineReferenceLineSmoother::Sampling(
   double s = 0.0;
   for (std::uint32_t i = 0; i <= num_spline; ++i, s += delta_s) {
     ReferencePoint rlp = raw_reference_line.GetReferencePoint(s);
+    if (i == 0) {
+      ref_x_ = rlp.x();
+      ref_y_ = rlp.y();
+    }
     common::PathPoint path_point;
-    path_point.set_x(rlp.x());
-    path_point.set_y(rlp.y());
+    path_point.set_x(rlp.x() - ref_x_);
+    path_point.set_y(rlp.y() - ref_y_);
     path_point.set_theta(rlp.heading());
     path_point.set_s(s);
     ref_points_.push_back(std::move(path_point));
@@ -146,7 +152,7 @@ bool QpSplineReferenceLineSmoother::Sampling(
   return true;
 }
 
-bool QpSplineReferenceLineSmoother::ApplyConstraint(
+bool QpSplineReferenceLineSmoother::AddConstraint(
     const ReferenceLine& raw_reference_line) {
   uint32_t constraint_num =
       smoother_config_.constraint_to_knots_ratio() * (t_knots_.size() - 1) + 1;
@@ -174,12 +180,11 @@ bool QpSplineReferenceLineSmoother::ApplyConstraint(
     xy_points.emplace_back(path_points[i].x(), path_points[i].y());
   }
 
-  static constexpr double kFixedBoundLimit = 0.01;
+  static constexpr double kFixedBoundLimit = 1.0e-6;
   if (longitudinal_bound.size() > 0) {
     longitudinal_bound.front() = kFixedBoundLimit;
     longitudinal_bound.back() = kFixedBoundLimit;
   }
-
   if (lateral_bound.size() > 0) {
     lateral_bound.front() = kFixedBoundLimit;
     lateral_bound.back() = kFixedBoundLimit;
@@ -205,7 +210,7 @@ bool QpSplineReferenceLineSmoother::ApplyConstraint(
   return true;
 }
 
-bool QpSplineReferenceLineSmoother::ApplyKernel() {
+bool QpSplineReferenceLineSmoother::AddKernel() {
   Spline2dKernel* kernel = spline_solver_->mutable_kernel();
 
   // add spline kernel
@@ -235,8 +240,8 @@ bool QpSplineReferenceLineSmoother::ExtractEvaluatedPoints(
     }
     const ReferencePoint rlp = raw_reference_line.GetReferencePoint(s);
     common::PathPoint path_point;
-    path_point.set_x(rlp.x());
-    path_point.set_y(rlp.y());
+    path_point.set_x(rlp.x() - ref_x_);
+    path_point.set_y(rlp.y() - ref_y_);
     path_point.set_theta(rlp.heading());
     path_point.set_s(s);
     path_points->push_back(std::move(path_point));

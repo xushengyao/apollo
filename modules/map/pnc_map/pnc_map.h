@@ -30,6 +30,7 @@
 
 #include "gflags/gflags.h"
 
+#include "modules/common/proto/vehicle_state.pb.h"
 #include "modules/routing/proto/routing.pb.h"
 
 #include "modules/map/hdmap/hdmap.h"
@@ -163,7 +164,7 @@ class PncMap {
   const hdmap::HDMap *hdmap() const;
 
   bool UpdateRoutingResponse(const routing::RoutingResponse &routing_response);
-  bool UpdatePosition(const common::PointENU &point);
+  bool UpdateVehicleState(const common::VehicleState &vehicle_state);
 
   const routing::RoutingResponse &routing_response() const;
 
@@ -175,7 +176,7 @@ class PncMap {
                         std::vector<RouteSegments> *const route_segments) const;
 
  private:
-  bool GetNearestPointFromRouting(const common::PointENU &point,
+  bool GetNearestPointFromRouting(const common::VehicleState &point,
                                   LaneWaypoint *waypoint) const;
 
   /**
