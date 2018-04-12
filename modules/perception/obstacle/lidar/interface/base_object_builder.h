@@ -55,10 +55,10 @@
 #include <vector>
 
 #include "modules/common/macro.h"
+#include "modules/perception/common/geometry_util.h"
+#include "modules/perception/common/pcl_types.h"
 #include "modules/perception/lib/base/registerer.h"
-#include "modules/perception/lib/pcl_util/pcl_types.h"
 #include "modules/perception/obstacle/base/object.h"
-#include "modules/perception/obstacle/common/geometry_util.h"
 
 namespace apollo {
 namespace perception {
@@ -77,8 +77,8 @@ class BaseObjectBuilder {
   // @brief: calc object feature, and fill fields.
   // @param [in]: options.
   // @param [in/out]: object list.
-  virtual bool Build(const ObjectBuilderOptions &options,
-                     std::vector<ObjectPtr> *objects) = 0;
+  virtual bool Build(const ObjectBuilderOptions& options,
+                     std::vector<ObjectPtr>* objects) = 0;
 
   virtual std::string name() const = 0;
 

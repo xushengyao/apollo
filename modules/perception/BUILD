@@ -5,13 +5,28 @@ package(default_visibility = ["//visibility:public"])
 cc_library(
     name = "perception_lib",
     srcs = ["perception.cc"],
-    hdrs = ["perception.h"],
+    hdrs = [
+        "perception.h",
+    ],
     deps = [
+        "//modules/common",
         "//modules/common:apollo_app",
-        "//modules/common:log",
         "//modules/common/adapters:adapter_manager",
-        "//modules/perception/common:perception_common",
-        "//modules/perception/obstacle/onboard:perception_obstacle_lidar_process",
+        "//modules/perception/common",
+        "//modules/perception/lib/base",
+        "//modules/perception/obstacle/onboard:camera_subnode",
+        "//modules/perception/obstacle/onboard:cipv_subnode",
+        "//modules/perception/obstacle/onboard:fusion_subnode",
+        "//modules/perception/obstacle/onboard:lane_post_processing_subnode",
+        "//modules/perception/obstacle/onboard:lidar_subnode",
+        "//modules/perception/obstacle/onboard:perception_obstacle_shared_data",
+        "//modules/perception/obstacle/onboard:radar_subnode",
+        "//modules/perception/obstacle/onboard:visualization_subnode",
+        "//modules/perception/onboard",
+        "//modules/perception/proto:perception_proto",
+        "//modules/perception/traffic_light/onboard",
+        "@com_google_protobuf//:protobuf",
+        "@ros//:ros_common",
     ],
 )
 
@@ -24,10 +39,6 @@ cc_binary(
     deps = [
         ":perception_lib",
         "//external:gflags",
-        "//modules/common:log",
-        "//modules/perception/common:perception_common",
-        "//modules/perception/proto:perception_proto",
-        "@ros//:ros_common",
     ],
 )
 

@@ -21,8 +21,8 @@
  * currently our assumption is that every timestamp will be of a
  * precision at 1us.
  */
-#ifndef MODULES_COMMON_TIME_TIME_H_
-#define MODULES_COMMON_TIME_TIME_H_
+#ifndef MODULES_COMMON_TIME_CLOCK_H_
+#define MODULES_COMMON_TIME_CLOCK_H_
 
 #include <atomic>
 #include <chrono>
@@ -55,8 +55,9 @@ using Duration = std::chrono::nanoseconds;
  */
 using Timestamp = std::chrono::time_point<std::chrono::system_clock, Duration>;
 
-static_assert(std::is_same<int64_t, Duration::rep>::value,
-              "The underlying type of the microseconds should be int64.");
+static_assert(
+    sizeof(std::chrono::nanoseconds) >= sizeof(int64_t),
+    "The underlying type of the nanoseconds should be at least 64 bits.");
 
 using nanos = std::chrono::nanoseconds;
 using micros = std::chrono::microseconds;
@@ -169,13 +170,14 @@ class Clock {
       default:
         AFATAL << "Unsupported clock mode: " << mode();
     }
+    return From(ros::Time::now().toSec());
   }
 
   /**
    * @brief gets the current time in second.
    * @return the current time in second.
    */
-  static double NowInSecond() { return ToSecond(Clock::Now()); }
+  static double NowInSeconds() { return ToSecond(Clock::Now()); }
 
   /**
    * @brief Set the behavior of the \class Clock.
@@ -256,10 +258,10 @@ inline Clock::Clock()
 #define PERF_BLOCK_WITH_THRESHOLD(message, threshold)                         \
   using apollo::common::time::Clock;                                          \
   for (double block_start_time = 0;                                           \
-       (block_start_time == 0 ? (block_start_time = Clock::NowInSecond())     \
+       (block_start_time == 0 ? (block_start_time = Clock::NowInSeconds())    \
                               : false);                                       \
        [&]() {                                                                \
-         double now = Clock::NowInSecond();                                   \
+         double now = Clock::NowInSeconds();                                  \
          if (now - block_start_time > (threshold)) {                          \
            AINFO << std::fixed << (message) << ": " << now - block_start_time \
                  << "s.";                                                     \
@@ -269,4 +271,4 @@ inline Clock::Clock()
 }  // namespace common
 }  // namespace apollo
 
-#endif  // MODULES_COMMON_TIME_TIME_H_
+#endif  // MODULES_COMMON_TIME_CLOCK_H_

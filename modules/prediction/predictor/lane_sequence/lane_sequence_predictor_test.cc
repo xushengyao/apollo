@@ -37,9 +37,10 @@ class LaneSequencePredictorTest : public KMLMapBasedTest {
  public:
   virtual void SetUp() {
     std::string file =
-      "modules/prediction/testdata/single_perception_vehicle_onlane.pb.txt";
+        "modules/prediction/testdata/single_perception_vehicle_onlane.pb.txt";
     apollo::common::util::GetProtoFromFile(file, &perception_obstacles_);
   }
+
  protected:
   apollo::perception::PerceptionObstacles perception_obstacles_;
 };
@@ -58,7 +59,7 @@ TEST_F(LaneSequencePredictorTest, OnLaneCase) {
   mlp_evaluator.Evaluate(obstacle_ptr);
   LaneSequencePredictor predictor;
   predictor.Predict(obstacle_ptr);
-  EXPECT_EQ(predictor.NumOfTrajectories(), 2);
+  EXPECT_EQ(predictor.NumOfTrajectories(), 1);
 }
 
 }  // namespace prediction

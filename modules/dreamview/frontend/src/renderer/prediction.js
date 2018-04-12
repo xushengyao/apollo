@@ -6,7 +6,6 @@ import { DEFAULT_COLOR, ObstacleColorMapping } from "renderer/obstacles.js";
 import { drawCircle, drawSegmentsFromPoints } from "utils/draw";
 
 const _ = require('lodash');
-const downsamplingRatio = 10;
 const majorThickness = 3;
 
 export default class Prediction {
@@ -63,6 +62,7 @@ export default class Prediction {
                 scene.add(mesh);
 
                 // Downsampling points to draw circles
+                const downsamplingRatio = Math.ceil(predictedTraj.length / 3);
                 for (let j = 0; j < predictedTraj.length; j += downsamplingRatio) {
                     const circleMesh = this.getPredCircle();
                     circleMesh.position.set(predictedTraj[j].x, predictedTraj[j].y, 0.24);
@@ -79,7 +79,11 @@ export default class Prediction {
                             predictionLineColor, minorThickness, 6);
                     this.predLines.push(mesh);
                     scene.add(mesh);
-                    minorThickness -= 0.7;
+
+                    // keep thickness the same trajectories with low probabilities
+                    if (minorThickness > 0.2) {
+                        minorThickness -= 0.7;
+                    }
                 });
             }
         });

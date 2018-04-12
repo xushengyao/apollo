@@ -17,14 +17,14 @@
 #include "modules/perception/obstacle/lidar/segmentation/cnnseg/cnn_segmentation.h"
 
 #include "modules/common/util/file.h"
-#include "modules/perception/lib/base/file_util.h"
 #include "modules/perception/lib/config_manager/config_manager.h"
-
-using std::string;
-using std::vector;
 
 namespace apollo {
 namespace perception {
+
+using apollo::common::util::GetAbsolutePath;
+using std::string;
+using std::vector;
 
 bool CNNSegmentation::Init() {
   string config_file;
@@ -53,12 +53,12 @@ bool CNNSegmentation::Init() {
   if (feature_param.has_width()) {
     width_ = static_cast<int>(feature_param.width());
   } else {
-    width_ = 512;
+    width_ = 640;
   }
   if (feature_param.has_height()) {
     height_ = static_cast<int>(feature_param.height());
   } else {
-    height_ = 512;
+    height_ = 640;
   }
 
 /// Instantiate Caffe net
@@ -117,15 +117,22 @@ bool CNNSegmentation::Init() {
   feature_blob_ = caffe_net_->blob_by_name(feature_blob_name);
   CHECK(feature_blob_ != nullptr) << "`" << feature_blob_name
                                   << "` not exists!";
+  // class prediction
+  string class_pt_blob_name = network_param.has_class_pt_blob()
+                                  ? network_param.class_pt_blob()
+                                  : "class_score";
+  class_pt_blob_ = caffe_net_->blob_by_name(class_pt_blob_name);
+  CHECK(class_pt_blob_ != nullptr) << "`" << class_pt_blob_name
+                                   << "` not exists!";
 
   cluster2d_.reset(new cnnseg::Cluster2D());
   if (!cluster2d_->Init(height_, width_, range_)) {
-    AERROR << "Fail to init cluster2d for CNNSegmentation";
+    AERROR << "Fail to Init cluster2d for CNNSegmentation";
   }
 
   feature_generator_.reset(new cnnseg::FeatureGenerator<float>());
   if (!feature_generator_->Init(feature_param, feature_blob_.get())) {
-    AERROR << "Fail to init feature generator for CNNSegmentation";
+    AERROR << "Fail to Init feature generator for CNNSegmentation";
     return false;
   }
 
@@ -179,6 +186,8 @@ bool CNNSegmentation::Segment(const pcl_util::PointCloudPtr& pc_ptr,
 
   cluster2d_->Filter(*confidence_pt_blob_, *height_pt_blob_);
 
+  cluster2d_->Classify(*class_pt_blob_);
+
   float confidence_thresh = cnnseg_param_.has_confidence_thresh()
                                 ? cnnseg_param_.confidence_thresh()
                                 : 0.1;
@@ -198,30 +207,31 @@ bool CNNSegmentation::GetConfigs(string* config_file, string* proto_file,
                                  string* weight_file) {
   ConfigManager* config_manager = ConfigManager::instance();
 
-  const ModelConfig* model_config = nullptr;
-  if (!config_manager->GetModelConfig("CNNSegmentation", &model_config)) {
+  const ModelConfig* model_config =
+      config_manager->GetModelConfig("CNNSegmentation");
+  if (model_config == nullptr) {
     AERROR << "Failed to get model config for CNNSegmentation";
     return false;
   }
-  const string& work_root = config_manager->work_root();
+  const string& work_root = config_manager->WorkRoot();
 
   if (!model_config->GetValue("config_file", config_file)) {
     AERROR << "Failed to get value of config_file.";
     return false;
   }
-  config_file->assign(FileUtil::GetAbsolutePath(work_root, *config_file));
+  config_file->assign(GetAbsolutePath(work_root, *config_file));
 
   if (!model_config->GetValue("proto_file", proto_file)) {
     AERROR << "Failed to get value of proto_file.";
     return false;
   }
-  proto_file->assign(FileUtil::GetAbsolutePath(work_root, *proto_file));
+  proto_file->assign(GetAbsolutePath(work_root, *proto_file));
 
   if (!model_config->GetValue("weight_file", weight_file)) {
     AERROR << "Failed to get value of weight_file.";
     return false;
   }
-  weight_file->assign(FileUtil::GetAbsolutePath(work_root, *weight_file));
+  weight_file->assign(GetAbsolutePath(work_root, *weight_file));
 
   return true;
 }

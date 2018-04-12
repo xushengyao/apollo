@@ -18,13 +18,14 @@
 
 #include "ros/include/ros/ros.h"
 
-#include "modules/common/adapters/adapter_manager.h"
 #include "modules/common/adapters/proto/adapter_config.pb.h"
-#include "modules/common/math/quaternion.h"
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "modules/common/time/time.h"
+
+#include "modules/common/adapters/adapter_manager.h"
+#include "modules/common/math/quaternion.h"
 
 using apollo::canbus::Chassis;
 using apollo::common::adapter::AdapterManager;
@@ -40,7 +41,6 @@ namespace dreamview {
 class SimControlTest : public ::testing::Test {
  public:
   SimControlTest() {
-    FLAGS_enable_sim_control = false;
     FLAGS_map_dir = "modules/dreamview/backend/testdata";
     FLAGS_base_map_filename = "garage.bin";
 
@@ -80,7 +80,17 @@ class SimControlTest : public ::testing::Test {
           apollo::common::adapter::AdapterConfig::ROUTING_RESPONSE);
     }
 
+    {
+      auto *sub_config = config.add_config();
+      sub_config->set_mode(
+          apollo::common::adapter::AdapterConfig::RECEIVE_ONLY);
+      sub_config->set_type(
+          apollo::common::adapter::AdapterConfig::NAVIGATION);
+    }
+
     AdapterManager::Init(config);
+
+    sim_control_->Start();
   }
 
  protected:
@@ -120,16 +130,13 @@ TEST_F(SimControlTest, Test) {
   adc_trajectory.mutable_header()->set_timestamp_sec(timestamp);
 
   sim_control_->SetStartPoint(1.0, 1.0);
-
-  AdapterManager::AddPlanningCallback(&SimControl::OnPlanning,
-                                      sim_control_.get());
-  AdapterManager::GetPlanning()->OnReceive(adc_trajectory);
+  AdapterManager::PublishPlanning(adc_trajectory);
 
   {
     Clock::SetMode(Clock::MOCK);
     const auto timestamp = apollo::common::time::From(100.01);
     Clock::SetNow(timestamp.time_since_epoch());
-    sim_control_->TimerCallback(ros::TimerEvent());
+    sim_control_->RunOnce();
 
     const Chassis *chassis = AdapterManager::GetChassis()->GetLatestPublished();
     const LocalizationEstimate *localization =

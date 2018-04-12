@@ -2,53 +2,55 @@ import React from "react";
 import { inject, observer } from "mobx-react";
 
 import ButtonPanel from "components/SideBar/ButtonPanel";
-import POI from "components/SideBar/POI";
-import Menu from "components/SideBar/Menu";
-import Console from "components/SideBar/Console";
-import Notification from "components/SideBar/Notification";
+import SubButton from "components/SideBar/SubButton";
 import WS from "store/websocket";
 
 @inject("store") @observer
 export default class SideBar extends React.Component {
     render() {
-        const { monitor, options, routeEditingManager, video } = this.props.store;
+        const { options, enableHMIButtonsOnly, hmi } = this.props.store;
 
         return (
-            <div className="sidebar">
-                <ButtonPanel resetBackend={() => {
-                                     WS.resetBackend();
-                                 }}
-                             dumpMessages={() => {
-                                     WS.dumpMessages();
-                                 }}
-                             onPOI={() => {
-                                 options.toggleShowPOI();
-                             }}
-                             showPOI={options.showPOI}
-                             showRouteEditingBar={() => {
-                                     options.showPOI = false;
-                                     routeEditingManager.enableRouteEditing();
-                                 }}
-                             onVideo={(event) => {
-                                     video.setVideo(event.target.files[0]);
-                                 }}
-                             onPNCMonitor={() => {
-                                     this.props.store.setPNCMonitor();
-                                 }}
-                             showPNCMonitor={options.showPNCMonitor}
-                             onConsole={() => {
-                                     options.toggleShowConsole();
-                                 }}
-                             showConsole={options.showConsole}
-                             onMenu={() => {
-                                     options.toggleShowMenu();
-                                 }}
-                             showMenu={options.showMenu} />
-                {options.showPOI ? <POI routeEditingManager={routeEditingManager}
-                    options={options} /> : <div/>}
-                {options.showMenu ? <Menu options={options} /> : <div/>}
-                {options.showConsole ? <Console monitor={monitor} /> :
-                 <Notification monitor={monitor} />}
+            <div className="side-bar">
+                <ButtonPanel
+                    enableHMIButtonsOnly={enableHMIButtonsOnly}
+                    inNavigationMode={hmi.inNavigationMode}
+                    onTasks={() => {
+                        this.props.store.handleOptionToggle("showTasks");
+                    }}
+                    showTasks={options.showTasks}
+                    onModuleController={() => {
+                        this.props.store.handleOptionToggle("showModuleController");
+                    }}
+                    showModuleController={options.showModuleController}
+                    onMenu={() => {
+                        this.props.store.handleOptionToggle("showMenu");
+                    }}
+                    showMenu={options.showMenu}
+                    onRouteEditingBar={() => {
+                        this.props.store.handleOptionToggle("showRouteEditingBar");
+                    }}
+                    showRouteEditingBar={options.showRouteEditingBar}
+                    onDataRecorder={() => {
+                        this.props.store.handleOptionToggle("showDataRecorder");
+                    }}
+                    showDataRecorder={options.showDataRecorder} />
+                <div className="sub-button-panel">
+                    <SubButton
+                        panelLabel="Voice Command"
+                        enablePanel={true}
+                        onPanel={() => {
+                            this.props.store.handleOptionToggle("enableVoiceCommand");
+                        }}
+                        showPanel={options.enableVoiceCommand} />
+                    <SubButton
+                        panelLabel="Default Routing"
+                        enablePanel={!enableHMIButtonsOnly && !options.showRouteEditingBar}
+                        onPanel={() => {
+                            this.props.store.handleOptionToggle("showPOI");
+                        }}
+                        showPanel={!options.showRouteEditingBar && options.showPOI} />
+                </div>
             </div>
         );
     }

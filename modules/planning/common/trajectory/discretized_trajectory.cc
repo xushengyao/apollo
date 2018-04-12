@@ -25,6 +25,7 @@
 #include <utility>
 
 #include "modules/common/log.h"
+#include "modules/common/math/linear_interpolation.h"
 #include "modules/planning/common/planning_util.h"
 
 namespace apollo {
@@ -46,9 +47,9 @@ DiscretizedTrajectory::DiscretizedTrajectory(const ADCTrajectory& trajectory) {
 
 TrajectoryPoint DiscretizedTrajectory::Evaluate(
     const double relative_time) const {
-  CHECK(!trajectory_points_.empty());
+  CHECK_GE(trajectory_points_.size(), 2);
   CHECK(trajectory_points_.front().relative_time() <= relative_time &&
-        trajectory_points_.back().relative_time() <= relative_time)
+        trajectory_points_.back().relative_time() >= relative_time)
       << "Invalid relative time input!";
 
   auto comp = [](const TrajectoryPoint& p, const double relative_time) {
@@ -77,9 +78,13 @@ TrajectoryPoint DiscretizedTrajectory::EvaluateUsingLinearApproximation(
 
   if (it_lower == trajectory_points_.begin()) {
     return trajectory_points_.front();
+  } else if (it_lower == trajectory_points_.end()) {
+    AWARN << "When evaluate trajectory, relative_time(" << relative_time
+          << ") is too large";
+    return trajectory_points_.back();
   }
-  return util::InterpolateUsingLinearApproximation(*(it_lower - 1), *it_lower,
-                                                   relative_time);
+  return common::math::InterpolateUsingLinearApproximation(
+      *(it_lower - 1), *it_lower, relative_time);
 }
 
 std::uint32_t DiscretizedTrajectory::QueryNearestPoint(
@@ -136,6 +141,18 @@ TrajectoryPoint DiscretizedTrajectory::StartPoint() const {
   return trajectory_points_.front();
 }
 
+double DiscretizedTrajectory::GetTemporalLength() const {
+  CHECK(!trajectory_points_.empty());
+  return trajectory_points_.back().relative_time() -
+         trajectory_points_.front().relative_time();
+}
+
+double DiscretizedTrajectory::GetSpatialLength() const {
+  CHECK(!trajectory_points_.empty());
+  return trajectory_points_.back().path_point().s() -
+         trajectory_points_.front().path_point().s();
+}
+
 std::uint32_t DiscretizedTrajectory::NumOfPoints() const {
   return trajectory_points_.size();
 }
@@ -143,6 +160,11 @@ std::uint32_t DiscretizedTrajectory::NumOfPoints() const {
 const std::vector<TrajectoryPoint>& DiscretizedTrajectory::trajectory_points()
     const {
   return trajectory_points_;
+}
+
+void DiscretizedTrajectory::SetTrajectoryPoints(
+    const std::vector<common::TrajectoryPoint>& trajectory_points) {
+  trajectory_points_ = trajectory_points;
 }
 
 void DiscretizedTrajectory::Clear() { trajectory_points_.clear(); }

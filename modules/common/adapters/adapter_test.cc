@@ -16,8 +16,8 @@
 
 #include "modules/common/adapters/adapter.h"
 
-#include <string>
 #include <cmath>
+#include <string>
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "modules/common/adapters/adapter_gflags.h"
@@ -73,7 +73,8 @@ TEST(AdapterTest, History) {
   adapter.Observe();
   {
     // Currently the history contains [2, 1].
-    std::vector<std::shared_ptr<int>> history(adapter.begin(), adapter.end());
+    std::vector<IntegerAdapter::DataPtr> history(adapter.begin(),
+                                                 adapter.end());
     EXPECT_EQ(2, history.size());
     EXPECT_EQ(2, *history[0]);
     EXPECT_EQ(1, *history[1]);
@@ -93,7 +94,8 @@ TEST(AdapterTest, History) {
   {
     // Although there are more messages, without calling Observe,
     // the history is still [2, 1].
-    std::vector<std::shared_ptr<int>> history(adapter.begin(), adapter.end());
+    std::vector<IntegerAdapter::DataPtr> history(adapter.begin(),
+                                                 adapter.end());
     EXPECT_EQ(2, history.size());
     EXPECT_EQ(2, *history[0]);
     EXPECT_EQ(1, *history[1]);
@@ -105,7 +107,8 @@ TEST(AdapterTest, History) {
     // maintain 3 elements in this adapter, 1 and 2 will be thrown out.
     //
     // History should be 5, 4, 3.
-    std::vector<std::shared_ptr<int>> history(adapter.begin(), adapter.end());
+    std::vector<IntegerAdapter::DataPtr> history(adapter.begin(),
+                                                 adapter.end());
     EXPECT_EQ(3, history.size());
     EXPECT_EQ(5, *history[0]);
     EXPECT_EQ(4, *history[1]);
@@ -148,24 +151,6 @@ TEST(AdapterTest, Dump) {
   apollo::common::util::GetProtoFromASCIIFile(temp_dir + "/local/23.pb.txt",
                                               &loaded);
   EXPECT_EQ(23, loaded.header().sequence_num());
-}
-
-TEST(AdapterTest, Delay) {
-  MyLocalizationAdapter adapter("local", "local_topic", 1);
-  EXPECT_TRUE(std::isnan(adapter.GetDelayInMs()));
-
-  localization::LocalizationEstimate msg;
-  msg.mutable_header()->set_timestamp_sec(12.3);
-  adapter.OnReceive(msg);
-  EXPECT_TRUE(std::isnan(adapter.GetDelayInMs()));
-
-  msg.mutable_header()->set_timestamp_sec(45.6);
-  adapter.OnReceive(msg);
-  EXPECT_DOUBLE_EQ((45.6 - 12.3) * 1000, adapter.GetDelayInMs());
-
-  msg.mutable_header()->set_timestamp_sec(45.7);
-  adapter.OnReceive(msg);
-  EXPECT_DOUBLE_EQ((45.7 - 45.6) * 1000, adapter.GetDelayInMs());
 }
 
 }  // namespace adapter

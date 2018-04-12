@@ -32,6 +32,7 @@
 
 #include "modules/planning/math/smoothing_spline/spline_1d_generator.h"
 #include "modules/planning/tasks/speed_optimizer.h"
+#include "modules/planning/tasks/st_graph/speed_limit_decider.h"
 #include "modules/planning/tasks/st_graph/st_boundary_mapper.h"
 
 namespace apollo {
@@ -48,6 +49,7 @@ class QpSplineStSpeedOptimizer : public SpeedOptimizer {
                          const PathData& path_data,
                          const apollo::common::TrajectoryPoint& init_point,
                          const ReferenceLine& reference_line,
+                         const SpeedData& reference_speed_data,
                          PathDecision* const path_decision,
                          SpeedData* const speed_data) override;
 

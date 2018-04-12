@@ -14,7 +14,8 @@
  * limitations under the License.
  *****************************************************************************/
 
-/** * @file path_data.h
+/**
+ * @file path_data.h
  **/
 
 #ifndef MODULES_PLANNING_COMMON_PATH_PATH_DATA_H_
@@ -23,7 +24,6 @@
 #include <list>
 #include <string>
 #include <utility>
-#include <vector>
 
 #include "modules/planning/common/path/discretized_path.h"
 #include "modules/planning/common/path/frenet_frame_path.h"
@@ -60,7 +60,7 @@ class PathData {
 
   void Clear();
 
-  bool IsEmpty() const;
+  bool Empty() const;
 
   std::string DebugString() const;
 

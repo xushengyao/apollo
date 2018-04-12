@@ -37,7 +37,7 @@ TEST(ObjectTest, test_Object) {
   obj.length = 0.1;
   obj.width = 0.2;
   obj.height = 0.3;
-  obj.type = BICYCLE;
+  obj.type = ObjectType::BICYCLE;
   obj.tracking_time = 10.0;
   obj.latest_tracked_time = 123456.7;
   Object obj2(obj);
@@ -62,7 +62,7 @@ TEST(ObjectTest, test_operator_eq) {
   obj.length = 0.1;
   obj.width = 0.2;
   obj.height = 0.3;
-  obj.type = BICYCLE;
+  obj.type = ObjectType::BICYCLE;
   obj.tracking_time = 10.0;
   obj.latest_tracked_time = 123456.7;
   Object obj2;
@@ -88,7 +88,7 @@ TEST(ObjectTest, test_clone) {
   obj.length = 0.1;
   obj.width = 0.2;
   obj.height = 0.3;
-  obj.type = BICYCLE;
+  obj.type = ObjectType::BICYCLE;
   obj.tracking_time = 10.0;
   obj.latest_tracked_time = 123456.7;
   Object obj2;
@@ -119,7 +119,7 @@ TEST(ObjectTest, test_Serialize) {
   obj.length = 0.1;
   obj.width = 0.2;
   obj.height = 0.3;
-  obj.type = BICYCLE;
+  obj.type = ObjectType::BICYCLE;
   obj.tracking_time = 10.0;
   obj.latest_tracked_time = 123456.7;
   obj.cloud = pcl_util::PointCloudPtr(new pcl_util::PointCloud);
@@ -140,7 +140,7 @@ TEST(ObjectTest, test_Serialize) {
   obj.polygon = polygon;
 
   PerceptionObstacle pb_obj;
-  EXPECT_TRUE(obj.Serialize(&pb_obj));
+  obj.Serialize(&pb_obj);
   EXPECT_EQ(pb_obj.id(), 2);
   EXPECT_EQ(pb_obj.position().x(), 4.0);
   AINFO << "org obj:" << obj.ToString();
@@ -172,7 +172,7 @@ TEST(ObjectTest, test_Deserialize) {
     polygon.push_back(p);
   }
 
-  EXPECT_TRUE(obj.Deserialize(pb_obj));
+  obj.Deserialize(pb_obj);
   EXPECT_EQ(obj.track_id, 1);
   EXPECT_EQ(obj.theta, 0.1);
   EXPECT_EQ(obj.center(0), 10.1);
@@ -181,7 +181,7 @@ TEST(ObjectTest, test_Deserialize) {
   EXPECT_EQ(obj.length, 2.0);
   EXPECT_EQ(obj.width, 1.0);
   EXPECT_EQ(obj.height, 1.5);
-  EXPECT_EQ(obj.type, BICYCLE);
+  EXPECT_EQ(obj.type, ObjectType::BICYCLE);
   EXPECT_EQ(obj.tracking_time, 20.1);
   EXPECT_EQ(obj.latest_tracked_time, 1147012345.678);
 }

@@ -20,6 +20,7 @@
 
 #include "Eigen/Core"
 
+#include "modules/common/configs/config_gflags.h"
 #include "modules/common/log.h"
 #include "modules/common/math/euler_angles_zxy.h"
 #include "modules/common/math/quaternion.h"
@@ -34,15 +35,21 @@ VehicleStateProvider::VehicleStateProvider() {}
 Status VehicleStateProvider::Update(
     const localization::LocalizationEstimate &localization,
     const canbus::Chassis &chassis) {
+  original_localization_ = localization;
   if (!ConstructExceptLinearVelocity(localization)) {
     std::string msg = util::StrCat(
         "Fail to update because ConstructExceptLinearVelocity error.",
         "localization:\n", localization.DebugString());
     return Status(ErrorCode::LOCALIZATION_ERROR, msg);
   }
-  if (chassis.has_header() && chassis.header().has_timestamp_sec()) {
+  if (localization.has_header() && localization.header().has_timestamp_sec()) {
+    vehicle_state_.set_timestamp(localization.header().timestamp_sec());
+  } else if (chassis.has_header() && chassis.header().has_timestamp_sec()) {
+    AERROR << "Unable to use location timestamp for vehicle state. Use chassis "
+              "time instead.";
     vehicle_state_.set_timestamp(chassis.header().timestamp_sec());
   }
+
   if (chassis.has_speed_mps()) {
     vehicle_state_.set_linear_velocity(chassis.speed_mps());
   }
@@ -63,6 +70,12 @@ bool VehicleStateProvider::ConstructExceptLinearVelocity(
     AERROR << "Invalid localization input.";
     return false;
   }
+  // skip localization update when it is in use_navigation_mode.
+  if (FLAGS_use_navigation_mode) {
+    ADEBUG << "Skip localization update when it is in use_navigation_mode.";
+    return true;
+  }
+
   vehicle_state_.mutable_pose()->CopyFrom(localization.pose());
   if (localization.pose().has_position()) {
     vehicle_state_.set_x(localization.pose().position().x());
@@ -165,6 +178,10 @@ double VehicleStateProvider::timestamp() const {
 
 const localization::Pose &VehicleStateProvider::pose() const {
   return vehicle_state_.pose();
+}
+
+const localization::Pose &VehicleStateProvider::original_pose() const {
+  return original_localization_.pose();
 }
 
 void VehicleStateProvider::set_linear_velocity(const double linear_velocity) {

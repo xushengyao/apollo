@@ -21,6 +21,7 @@
 #ifndef MODULES_COMMON_MACRO_H_
 #define MODULES_COMMON_MACRO_H_
 
+#include <iomanip>
 #include <iostream>
 
 #define DISALLOW_COPY_AND_ASSIGN(classname) \

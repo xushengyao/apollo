@@ -22,7 +22,7 @@
 #include <vector>
 #include "caffe/caffe.hpp"
 #include "modules/common/log.h"
-#include "modules/perception/lib/pcl_util/pcl_types.h"
+#include "modules/perception/common/pcl_types.h"
 #include "modules/perception/obstacle/lidar/segmentation/cnnseg/proto/cnnseg.pb.h"
 
 namespace apollo {
@@ -83,4 +83,4 @@ typedef FeatureGenerator<double> FP64FeatureGenerator;
 }  // namespace perception
 }  // namespace apollo
 
-#endif  // MODULES_PERCEPTION_OBSTACLE_LIDAR_SEGMENTATION_CNNSEG_FEATURE_GENERATOR_H_  // NOLINT
+#endif

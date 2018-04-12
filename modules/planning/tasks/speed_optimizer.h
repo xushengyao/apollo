@@ -15,7 +15,7 @@
  *****************************************************************************/
 
 /**
- * @file speed_optimizer.h
+ * @file
  **/
 
 #ifndef MODULES_PLANNING_TASKS_SPEED_OPTIMIZER_H_
@@ -43,14 +43,12 @@ class SpeedOptimizer : public Task {
   virtual apollo::common::Status Process(
       const SLBoundary& adc_sl_boundary, const PathData& path_data,
       const common::TrajectoryPoint& init_point,
-      const ReferenceLine& reference_line, PathDecision* const path_decision,
+      const ReferenceLine& reference_line,
+      const SpeedData& reference_speed_data, PathDecision* const path_decision,
       SpeedData* const speed_data) = 0;
 
-  SpeedData GenerateStopProfile(const double init_speed,
-                                const double init_acc) const;
-
   void RecordSTGraphDebug(const StGraphData& st_graph_data,
-                          planning_internal::STGraphDebug* stGraphDebug);
+                          planning_internal::STGraphDebug* stGraphDebug) const;
 
   void RecordDebugInfo(const SpeedData& speed_data);
 };

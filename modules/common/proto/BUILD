@@ -64,24 +64,6 @@ proto_library(
 )
 
 cc_proto_library(
-    name = "gnss_status_proto",
-    deps = [
-        ":gnss_status_proto_lib",
-    ],
-)
-
-proto_library(
-    name = "gnss_status_proto_lib",
-    srcs = [
-        "gnss_status.proto",
-    ],
-    deps = [
-        ":error_code_proto_lib",
-        ":header_proto_lib",
-    ],
-)
-
-cc_proto_library(
     name = "pnc_point_proto",
     deps = [
         ":pnc_point_proto_lib",
@@ -96,36 +78,33 @@ proto_library(
 )
 
 cc_proto_library(
-    name = "vehicle_state_proto",
+    name = "drive_event_proto",
     deps = [
-        ":vehicle_state_proto_lib",
+        ":drive_event_proto_lib",
     ],
 )
 
 proto_library(
-    name = "vehicle_state_proto_lib",
+    name = "drive_event_proto_lib",
     srcs = [
-        "vehicle_state.proto",
+        "drive_event.proto",
     ],
     deps = [
-        "//modules/canbus/proto:canbus_proto_lib",
+        ":header_proto_lib",
         "//modules/localization/proto:pose_proto_lib",
     ],
 )
 
-cc_proto_library(
-    name = "car_sound_proto",
-    deps = [
-        ":car_sound_proto_lib",
+proto_library(
+    name = "drive_state_proto_lib",
+    srcs = [
+        "drive_state.proto",
     ],
 )
 
-proto_library(
-    name = "car_sound_proto_lib",
-    srcs = [
-        "car_sound.proto",
-    ],
+cc_proto_library(
+    name = "drive_state_proto",
     deps = [
-        ":header_proto_lib",
+        ":drive_state_proto_lib",
     ],
 )

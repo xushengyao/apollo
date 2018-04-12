@@ -29,21 +29,22 @@
 #include "pcl/point_types.h"
 
 #include "modules/common/log.h"
+#include "modules/perception/common/pcl_types.h"
 #include "modules/perception/common/perception_gflags.h"
-#include "modules/perception/lib/pcl_util/pcl_types.h"
+#include "modules/perception/obstacle/base/object.h"
 
 #define VISUALIZE
 
 using apollo::perception::CNNSegmentation;
-using std::vector;
-using std::string;
-using std::unordered_set;
-using std::shared_ptr;
-using apollo::perception::pcl_util::PointCloudPtr;
+using apollo::perception::ObjectPtr;
 using apollo::perception::pcl_util::PointCloud;
+using apollo::perception::pcl_util::PointCloudPtr;
 using apollo::perception::pcl_util::PointIndices;
 using apollo::perception::pcl_util::PointXYZIT;
-using apollo::perception::ObjectPtr;
+using std::shared_ptr;
+using std::string;
+using std::unordered_set;
+using std::vector;
 
 namespace apollo {
 namespace perception {
@@ -62,6 +63,19 @@ struct CellStat {
 
 int F2I(float val, float ori, float scale) {
   return static_cast<int>(std::floor((ori - val) * scale));
+}
+
+cv::Vec3b GetTypeColor(ObjectType type) {
+  switch (type) {
+    case ObjectType::PEDESTRIAN:
+      return cv::Vec3b(255, 128, 128);  // pink
+    case ObjectType::BICYCLE:
+      return cv::Vec3b(0, 0, 255);  // blue
+    case ObjectType::VEHICLE:
+      return cv::Vec3b(0, 255, 0);  // green
+    default:
+      return cv::Vec3b(0, 255, 255);  // yellow
+  }
 }
 
 class CNNSegmentationTest : public testing::Test {
@@ -98,7 +112,7 @@ bool GetPointCloudFromFile(const string &pcd_file, PointCloudPtr cloud) {
     point.y = ori_cloud.points[i].y;
     point.z = ori_cloud.points[i].z;
     point.intensity = ori_cloud.points[i].intensity;
-    if (isnan(ori_cloud.points[i].x)) {
+    if (std::isnan(ori_cloud.points[i].x)) {
       continue;
     }
     cloud->push_back(point);
@@ -159,8 +173,7 @@ void DrawDetection(const PointCloudPtr &pc_ptr, const PointIndices &valid_idx,
   }
 
   // show segment grids with tight bounding box
-  const cv::Vec3b segm_color(0, 0, 255);    // red
-  const cv::Vec3b bbox_color(0, 255, 255);  // yellow
+  const cv::Vec3b segm_color(0, 0, 255);  // red
 
   for (size_t i = 0; i < objects.size(); ++i) {
     const ObjectPtr &obj = objects[i];
@@ -187,6 +200,7 @@ void DrawDetection(const PointCloudPtr &pc_ptr, const PointIndices &valid_idx,
 
     // fillConvexPoly(img, list.data(), list.size(), cv::Scalar(positive_prob *
     // segm_color));
+    cv::Vec3b bbox_color = GetTypeColor(obj->type);
     rectangle(img, cv::Point(x_min, y_min), cv::Point(x_max, y_max),
               cv::Scalar(bbox_color));
   }

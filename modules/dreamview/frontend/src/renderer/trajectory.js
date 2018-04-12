@@ -11,7 +11,7 @@ const PLANNING_PROPERTIES = {
         zOffset: 7
     },
     DpPolyPathOptimizer: {
-        optionName: 'showPlaningDpOptimizer',
+        optionName: 'showPlanningDpOptimizer',
         width: 0.4,
         color: 0x8DFCB4,
         opacity: 0.8,
@@ -72,7 +72,7 @@ export default class PlanningTrajectory {
         this.paths = {};
     }
 
-    update(world, coordinates, scene) {
+    update(world, planningData, coordinates, scene) {
         // Derive the width of the trajectory ribbon.
         let width = null;
         if (!world.autoDrivingCar.width) {
@@ -86,8 +86,8 @@ export default class PlanningTrajectory {
 
         // Prepare data
         const newPaths = {};
-        if (world.planningData && world.planningData.path) {
-            world.planningData.path.forEach((path) => {
+        if (planningData && planningData.path) {
+            planningData.path.forEach((path) => {
                 newPaths[path.name] = path.pathPoint;
             });
         }

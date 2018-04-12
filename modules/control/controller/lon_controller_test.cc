@@ -41,7 +41,7 @@ using apollo::common::time::Clock;
 using LocalizationPb = localization::LocalizationEstimate;
 using ChassisPb = canbus::Chassis;
 using TrajectoryPb = planning::ADCTrajectory;
-using VehicleStateProvider = common::VehicleStateProvider;
+using apollo::common::VehicleStateProvider;
 
 const char data_path[] =
     "modules/control/testdata/longitudinal_controller_test/";
@@ -59,7 +59,7 @@ class LonControllerTest : public ::testing::Test, LonController {
                                                  &control_conf));
     longitudinal_conf_ = control_conf.lon_controller_conf();
 
-    timestamp_ = Clock::NowInSecond();
+    timestamp_ = Clock::NowInSeconds();
 
     controller_.reset(new LonController());
   }
@@ -80,7 +80,7 @@ class LonControllerTest : public ::testing::Test, LonController {
     CHECK(apollo::common::util::GetProtoFromFile(filename, &localization))
         << "Failed to open file " << filename;
     localization.mutable_header()->set_timestamp_sec(timestamp_);
-    return std::move(localization);
+    return localization;
   }
 
   ChassisPb LoadChassisPb(const std::string &filename) {
@@ -88,7 +88,7 @@ class LonControllerTest : public ::testing::Test, LonController {
     CHECK(apollo::common::util::GetProtoFromFile(filename, &chassis_pb))
         << "Failed to open file " << filename;
     chassis_pb.mutable_header()->set_timestamp_sec(timestamp_);
-    return std::move(chassis_pb);
+    return chassis_pb;
   }
 
   TrajectoryPb LoadPlanningTrajectoryPb(const std::string &filename) {
@@ -114,7 +114,7 @@ TEST_F(LonControllerTest, ComputeLongitudinalErrors) {
   auto trajectory_pb =
       LoadPlanningTrajectoryPb(std::string(data_path) + "1_planning.pb.txt");
 
-  double time_now = Clock::NowInSecond();
+  double time_now = Clock::NowInSeconds();
   trajectory_pb.mutable_header()->set_timestamp_sec(time_now);
 
   auto *vehicle_state = VehicleStateProvider::instance();

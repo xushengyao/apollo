@@ -25,7 +25,7 @@ namespace common {
 namespace math {
 
 TEST(QuaternionTest, QuaternionToHeading) {
-  constexpr double v = sqrt(0.5);  // = cos(pi / 4) = sin(pi / 4)
+  const double v = sqrt(0.5);  // = cos(pi / 4) = sin(pi / 4)
   EXPECT_DOUBLE_EQ(0,
                    QuaternionToHeading(v, 0.0, 0.0, -v));  // Pointing to east.
   EXPECT_DOUBLE_EQ(
@@ -36,7 +36,7 @@ TEST(QuaternionTest, QuaternionToHeading) {
                    QuaternionToHeading(v, 0.0, 0.0, v));  // Pointing to west.
 
   Eigen::Quaternionf q(1.0, 0.0, 0.0, 0.0);
-  EXPECT_DOUBLE_EQ(M_PI_2, QuaternionToHeading(q));  // Pointing to north.
+  EXPECT_FLOAT_EQ(M_PI_2, QuaternionToHeading(q));  // Pointing to north.
 
   const double headings[] = {-3.3, -2.2, -1.1, 1.2, 2.3, 3.4, 4.5, 5.6, 6.7};
   for (double heading : headings) {

@@ -6,6 +6,8 @@ import MTLLoader from "three/examples/js/loaders/MTLLoader.js";
 const mtlLoader = new THREE.MTLLoader();
 const textureLoader = new THREE.TextureLoader();
 
+THREE.TextureLoader.prototype.crossOrigin = '';
+
 const loadedMaterialAndObject = {};
 
 export function loadObject(materialFile, objectFile, scale, callback) {
@@ -19,10 +21,20 @@ export function loadObject(materialFile, objectFile, scale, callback) {
     if (loadedMaterialAndObject[objectFile]) {
         placeMtlAndObj(loadedMaterialAndObject[objectFile]);
     } else {
-        mtlLoader.load(materialFile, materials => {
+        new Promise((resolve, reject) => {
+            if (materialFile) {
+                mtlLoader.load(materialFile, materials => {
+                    materials.preload();
+                    resolve(materials);
+                });
+            } else {
+                resolve(null);
+            }
+        }).then((materials) => {
             const objLoader = new THREE.OBJLoader();
-            materials.preload();
-            objLoader.setMaterials(materials);
+            if (materials) {
+                objLoader.setMaterials(materials);
+            }
 
             objLoader.load(objectFile, loaded => {
                 loaded.name = objectFile;
@@ -30,10 +42,12 @@ export function loadObject(materialFile, objectFile, scale, callback) {
                 loadedMaterialAndObject[objectFile] = loaded;
                 placeMtlAndObj(loaded);
             });
+        }).catch(() => {
+            console.error("Failed to load object.");
         });
     }
 }
 
-export function loadTexture(textureFile, callback) {
-    textureLoader.load(textureFile, callback);
+export function loadTexture(textureFile, onLoadCallback, onErrorCallback) {
+    textureLoader.load(textureFile, onLoadCallback, undefined, onErrorCallback);
 }

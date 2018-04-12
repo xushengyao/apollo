@@ -32,18 +32,12 @@ from numpy import genfromtxt
 
 from modules.canbus.proto import chassis_pb2
 from modules.common.proto import pnc_point_pb2
+from modules.common.proto import drive_state_pb2
 from modules.control.proto import pad_msg_pb2
-from modules.hmi.proto import runtime_status_pb2
 from modules.localization.proto import localization_pb2
 from modules.planning.proto import planning_pb2
 
-# Import hmi_status_helper
 APOLLO_ROOT = os.path.join(os.path.dirname(__file__), '../../../')
-hmi_utils_path = os.path.join(APOLLO_ROOT, 'modules/hmi/utils')
-if hmi_utils_path not in sys.path:
-    sys.path.append(hmi_utils_path)
-import hmi_status_helper
-
 SEARCH_INTERVAL = 1000
 
 
@@ -93,12 +87,6 @@ class RtkPlayer(object):
         self.completepath = (completepath == 't')
 
         self.estop = False
-
-        # Report status to HMI.
-        status_pb = runtime_status_pb2.RuntimeStatus()
-        status_pb.tools.planning_ready = True
-        hmi_status_helper.HMIStatusHelper.report_status(status_pb)
-
         self.logger.info("Planning Ready")
 
     def localization_callback(self, data):
@@ -240,6 +228,8 @@ class RtkPlayer(object):
         planningdata.total_path_time = self.data['time'][self.end] - \
             self.data['time'][self.start]
         planningdata.gear = int(self.data['gear'][self.closest_time()])
+        planningdata.engage_advice.advice = \
+            drive_state_pb2.EngageAdvice.READY_TO_ENGAGE
 
         self.planning_pub.publish(planningdata)
         self.logger.debug("Generated Planning Sequence: " +

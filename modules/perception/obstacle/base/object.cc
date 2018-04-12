@@ -18,46 +18,93 @@
 
 #include "modules/common/log.h"
 #include "modules/common/macro.h"
+#include "modules/common/math/box2d.h"
 #include "modules/common/util/string_util.h"
 #include "modules/perception/common/perception_gflags.h"
 
 namespace apollo {
 namespace perception {
 
+using apollo::common::math::Box2d;
+using apollo::common::math::Vec2d;
+using apollo::common::util::Print;
+using apollo::common::util::StrCat;
 using Eigen::Vector3d;
 
 Object::Object() {
-  direction = Vector3d(1, 0, 0);
-  center = Vector3d::Zero();
-  velocity = Vector3d::Zero();
   cloud.reset(new pcl_util::PointCloud);
-  type = UNKNOWN;
-  type_probs.resize(MAX_OBJECT_TYPE, 0);
+  type_probs.resize(static_cast<int>(ObjectType::MAX_OBJECT_TYPE), 0);
+  position_uncertainty << 0.01, 0, 0, 0, 0.01, 0, 0, 0, 0.01;
+  velocity_uncertainty << 0.01, 0, 0, 0, 0.01, 0, 0, 0, 0.01;
 }
 
 void Object::clone(const Object& rhs) {
   *this = rhs;
   pcl::copyPointCloud<pcl_util::Point, pcl_util::Point>(*(rhs.cloud), *cloud);
+  radar_supplement = nullptr;
+  if (rhs.radar_supplement != nullptr) {
+    radar_supplement.reset(new RadarSupplement(*rhs.radar_supplement));
+  }
+  camera_supplement = nullptr;
+  if (rhs.camera_supplement != nullptr) {
+    camera_supplement.reset(new CameraSupplement());
+    camera_supplement->clone(*(rhs.camera_supplement));
+  }
 }
 
 std::string Object::ToString() const {
-  return common::util::StrCat(
-      "Object[id: ", id, ", "
-      "track_id: ", track_id, ", "
-      "cloud_size: ", cloud->size(), ", "
-      "direction: ", direction.transpose(), ", "
-      "center: ", center.transpose(), ", "
-      "velocity: ", velocity.transpose(), ", "
-      "width: ", width, ", "
-      "length: ", length, ", "
-      "height: ", height, ", "
-      "polygon_size: ", polygon.size(), ", "
-      "type: ", type, ", "
-      "is_background: ", is_background, "]");
+  // StrCat supports 9 arguments at most.
+  return StrCat(StrCat("Object[id: ", id,
+                       ", "
+                       "track_id: ",
+                       track_id,
+                       ", "
+                       "cloud_size: ",
+                       cloud->size(),
+                       ", "
+                       "direction: ",
+                       Print(direction.transpose()), ", "),
+                StrCat("center: ", Print(center.transpose()),
+                       ", "
+                       "velocity: ",
+                       Print(velocity.transpose()),
+                       ", "
+                       "width: ",
+                       width,
+                       ", "
+                       "length: ",
+                       length, ", "),
+                StrCat("height: ", height,
+                       ", "
+                       "polygon_size: ",
+                       polygon.size(),
+                       ", "
+                       "type: ",
+                       static_cast<int>(type),
+                       ", "
+                       "is_background: ",
+                       is_background),
+                StrCat(", is_cipv: ", b_cipv, "]"));
 }
 
-bool Object::Serialize(PerceptionObstacle* pb_obj) const {
-  CHECK(pb_obj != NULL);
+// Add 4 corners in the polygon
+void Object::AddFourCorners(PerceptionObstacle* pb_obj) const {
+  Box2d object_bounding_box = {{center(0), center(1)}, theta, length, width};
+  std::vector<Vec2d> corners;
+  object_bounding_box.GetAllCorners(&corners);
+
+  for (const auto& corner : corners) {
+    Point* p = pb_obj->add_polygon_point();
+    p->set_x(corner.x());
+    p->set_y(corner.y());
+    p->set_z(0.0);
+  }
+  ADEBUG << "PerceptionObstacle bounding box is : "
+         << object_bounding_box.DebugString();
+}
+
+void Object::Serialize(PerceptionObstacle* pb_obj) const {
+  CHECK(pb_obj != nullptr);
   pb_obj->set_id(track_id);
   pb_obj->set_theta(theta);
 
@@ -75,11 +122,17 @@ bool Object::Serialize(PerceptionObstacle* pb_obj) const {
   pb_obj->set_width(width);
   pb_obj->set_height(height);
 
-  for (auto point : polygon.points) {
-    Point* p = pb_obj->add_polygon_point();
-    p->set_x(point.x);
-    p->set_y(point.y);
-    p->set_z(point.z);
+  if (polygon.size() /*pb_obs.polygon_point_size() */ >= 4) {
+    for (auto point : polygon.points) {
+      Point* p = pb_obj->add_polygon_point();
+      p->set_x(point.x);
+      p->set_y(point.y);
+      p->set_z(point.z);
+    }
+  } else {  // if polygon size is less than 4
+    // Generate polygon from center position, width, height
+    // and orientation of the object
+    AddFourCorners(pb_obj);
   }
 
   if (FLAGS_is_serialize_point_cloud) {
@@ -90,14 +143,15 @@ bool Object::Serialize(PerceptionObstacle* pb_obj) const {
     }
   }
 
+  pb_obj->set_confidence(score);
+  pb_obj->set_confidence_type(
+      static_cast<PerceptionObstacle::ConfidenceType>(score_type));
   pb_obj->set_tracking_time(tracking_time);
   pb_obj->set_type(static_cast<PerceptionObstacle::Type>(type));
   pb_obj->set_timestamp(latest_tracked_time);  // in seconds.
-
-  return true;
 }
 
-bool Object::Deserialize(const PerceptionObstacle& pb_obs) {
+void Object::Deserialize(const PerceptionObstacle& pb_obs) {
   track_id = pb_obs.id();
   theta = pb_obs.theta();
 
@@ -123,11 +177,24 @@ bool Object::Deserialize(const PerceptionObstacle& pb_obs) {
     polygon.push_back(point);
   }
 
+  score = pb_obs.confidence();
+  score_type = static_cast<ScoreType>(pb_obs.confidence_type());
   tracking_time = pb_obs.tracking_time();
   latest_tracked_time = pb_obs.timestamp();
   type = static_cast<ObjectType>(pb_obs.type());
+}
 
-  return true;
+std::string SensorObjects::ToString() const {
+  std::ostringstream oss;
+  oss << "sensor_type: " << GetSensorType(sensor_type)
+      << ", timestamp:" << GLOG_TIMESTAMP(timestamp)
+      << ", sensor2world_pose:\n";
+  oss << sensor2world_pose << "\n, objects: " << objects.size() << " < ";
+  for (auto obj : objects) {
+    oss << "\n" << obj->ToString();
+  }
+  oss << " >]";
+  return oss.str();
 }
 
 }  // namespace perception

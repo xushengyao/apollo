@@ -24,6 +24,7 @@
 #include "modules/common/adapters/adapter_manager.h"
 #include "modules/common/math/integral.h"
 #include "modules/common/math/linear_interpolation.h"
+#include "modules/common/math/math_utils.h"
 #include "modules/planning/common/planning_gflags.h"
 #include "modules/planning/math/hermite_spline.h"
 
@@ -31,10 +32,10 @@ namespace apollo {
 namespace planning {
 namespace util {
 
-using common::adapter::AdapterManager;
 using common::PathPoint;
 using common::SpeedPoint;
 using common::TrajectoryPoint;
+using common::adapter::AdapterManager;
 
 PathPoint interpolate(const PathPoint &p0, const PathPoint &p1,
                       const double s) {
@@ -42,15 +43,18 @@ PathPoint interpolate(const PathPoint &p0, const PathPoint &p1,
   double s1 = p1.s();
   CHECK(s0 <= s && s <= s1);
 
-  std::array<double, 2> gx0{{p0.theta(), p0.kappa()}};
-  std::array<double, 2> gx1{{p1.theta(), p1.kappa()}};
-  HermiteSpline<double, 3> geometry_spline(gx0, gx1, s0, s1);
-  auto func_cos_theta = [&geometry_spline](const double s) {
-    auto theta = geometry_spline.Evaluate(0, s);
+  double theta_diff = common::math::NormalizeAngle(p1.theta() - p0.theta());
+
+  std::array<double, 3> gx0{{0.0, p0.kappa(), p0.dkappa()}};
+  std::array<double, 3> gx1{{theta_diff, p1.kappa(), p1.dkappa()}};
+
+  HermiteSpline<double, 5> geometry_spline(gx0, gx1, s0, s1);
+  auto func_cos_theta = [&geometry_spline, &p0](const double s) {
+    auto theta = geometry_spline.Evaluate(0, s) + p0.theta();
     return std::cos(theta);
   };
-  auto func_sin_theta = [&geometry_spline](const double s) {
-    auto theta = geometry_spline.Evaluate(0, s);
+  auto func_sin_theta = [&geometry_spline, &p0](const double s) {
+    auto theta = geometry_spline.Evaluate(0, s) + p0.theta();
     return std::sin(theta);
   };
 
@@ -58,7 +62,8 @@ PathPoint interpolate(const PathPoint &p0, const PathPoint &p1,
       p0.x() + common::math::IntegrateByGaussLegendre<5>(func_cos_theta, s0, s);
   double y =
       p0.y() + common::math::IntegrateByGaussLegendre<5>(func_sin_theta, s0, s);
-  double theta = geometry_spline.Evaluate(0, s);
+  double theta =
+      common::math::NormalizeAngle(geometry_spline.Evaluate(0, s) + p0.theta());
   double kappa = geometry_spline.Evaluate(1, s);
   double dkappa = geometry_spline.Evaluate(2, s);
   double d2kappa = geometry_spline.Evaluate(3, s);
@@ -72,35 +77,6 @@ PathPoint interpolate(const PathPoint &p0, const PathPoint &p1,
   p.set_ddkappa(d2kappa);
   p.set_s(s);
   return p;
-}
-
-PathPoint InterpolateUsingLinearApproximation(const PathPoint &p0,
-                                              const PathPoint &p1,
-                                              const double s) {
-  double s0 = p0.s();
-  double s1 = p1.s();
-  CHECK(s0 < s1);
-
-  PathPoint path_point;
-  double weight = (s - s0) / (s1 - s0);
-  double x = (1 - weight) * p0.x() + weight * p1.x();
-  double y = (1 - weight) * p0.y() + weight * p1.y();
-  double cos_heading =
-      (1 - weight) * std::cos(p0.theta()) + weight * std::cos(p1.theta());
-  double sin_heading =
-      (1 - weight) * std::sin(p0.theta()) + weight * std::sin(p1.theta());
-  double theta = std::atan2(sin_heading, cos_heading);
-  double kappa = (1 - weight) * p0.kappa() + weight * p1.kappa();
-  double dkappa = (1 - weight) * p0.dkappa() + weight * p1.dkappa();
-  double ddkappa = (1 - weight) * p0.ddkappa() + weight * p1.ddkappa();
-  path_point.set_x(x);
-  path_point.set_y(y);
-  path_point.set_theta(theta);
-  path_point.set_kappa(kappa);
-  path_point.set_dkappa(dkappa);
-  path_point.set_ddkappa(ddkappa);
-  path_point.set_s(s);
-  return path_point;
 }
 
 TrajectoryPoint interpolate(const TrajectoryPoint &tp0,
@@ -145,9 +121,9 @@ TrajectoryPoint interpolate(const TrajectoryPoint &tp0,
   };
 
   double x = pp0.x() +
-      common::math::IntegrateByGaussLegendre<5>(func_cos_theta, s0, s);
+             common::math::IntegrateByGaussLegendre<5>(func_cos_theta, s0, s);
   double y = pp0.y() +
-      common::math::IntegrateByGaussLegendre<5>(func_sin_theta, s0, s);
+             common::math::IntegrateByGaussLegendre<5>(func_sin_theta, s0, s);
   double theta = geometry_spline.Evaluate(0, s);
   double kappa = geometry_spline.Evaluate(1, s);
   double dkappa = geometry_spline.Evaluate(2, s);
@@ -170,35 +146,6 @@ TrajectoryPoint interpolate(const TrajectoryPoint &tp0,
   return tp;
 }
 
-TrajectoryPoint InterpolateUsingLinearApproximation(const TrajectoryPoint &tp0,
-                                                    const TrajectoryPoint &tp1,
-                                                    const double t) {
-  const PathPoint &pp0 = tp0.path_point();
-  const PathPoint &pp1 = tp1.path_point();
-  double t0 = tp0.relative_time();
-  double t1 = tp1.relative_time();
-
-  TrajectoryPoint tp;
-  tp.set_v(common::math::lerp(tp0.v(), t0, tp1.v(), t1, t));
-  tp.set_a(common::math::lerp(tp0.a(), t0, tp1.a(), t1, t));
-  tp.set_relative_time(t);
-
-  PathPoint *path_point = tp.mutable_path_point();
-  path_point->set_x(common::math::lerp(pp0.x(), t0, pp1.x(), t1, t));
-  path_point->set_y(common::math::lerp(pp0.y(), t0, pp1.y(), t1, t));
-  path_point->set_theta(
-      common::math::lerp(pp0.theta(), t0, pp1.theta(), t1, t));
-  path_point->set_kappa(
-      common::math::lerp(pp0.kappa(), t0, pp1.kappa(), t1, t));
-  path_point->set_dkappa(
-      common::math::lerp(pp0.dkappa(), t0, pp1.dkappa(), t1, t));
-  path_point->set_ddkappa(
-      common::math::lerp(pp0.ddkappa(), t0, pp1.ddkappa(), t1, t));
-  path_point->set_s(common::math::lerp(pp0.s(), t0, pp1.s(), t1, t));
-
-  return tp;
-}
-
 common::SLPoint interpolate(const common::SLPoint &start,
                             const common::SLPoint &end, const double weight) {
   common::SLPoint point;
@@ -207,6 +154,11 @@ common::SLPoint interpolate(const common::SLPoint &start,
   point.set_s(s);
   point.set_l(l);
   return point;
+}
+
+PlanningStatus *GetPlanningStatus() {
+  static PlanningStatus status;
+  return &status;
 }
 
 void DumpPlanningContext() {

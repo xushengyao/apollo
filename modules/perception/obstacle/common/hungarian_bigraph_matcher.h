@@ -35,8 +35,9 @@
 #ifndef MODULES_PERCEPTION_OBSTACLE_COMMON_HUNGARIAN_BIGRAPH_MATCHER_H_
 #define MODULES_PERCEPTION_OBSTACLE_COMMON_HUNGARIAN_BIGRAPH_MATCHER_H_
 
-#include <algorithm>
 #include <cstdio>
+
+#include <algorithm>
 #include <limits>
 #include <vector>
 
@@ -56,7 +57,7 @@ class HungarianOptimizer {
   // be square (i.e. we can have different numbers of agents and tasks), but it
   // must be regular (i.e. there must be the same number of entries in each row
   // of the matrix).
-  explicit HungarianOptimizer(const std::vector<std::vector<double> >& costs);
+  explicit HungarianOptimizer(const std::vector<std::vector<double>>& costs);
 
   // Find an assignment which maximizes the total cost.
   // Returns the assignment in the two vectors passed as argument.
@@ -196,20 +197,20 @@ class HungarianOptimizer {
   void augment_path();
 
   // The size of the problem, i.e. std::max(#agents, #tasks).
-  int matrix_size_;
+  int matrix_size_ = 0;
 
   // The expanded cost matrix.
-  std::vector<std::vector<double> > costs_;
+  std::vector<std::vector<double>> costs_;
 
   // The greatest cost in the initial cost matrix.
-  double max_cost_;
+  double max_cost_ = 0.0;
 
   // Which rows and columns are currently covered.
   std::vector<bool> rows_covered_;
   std::vector<bool> cols_covered_;
 
   // The marks_ (star/prime/none) on each element of the cost matrix.
-  std::vector<std::vector<Mark> > marks_;
+  std::vector<std::vector<Mark>> marks_;
 
   // The number of stars in each column - used to speed up coverStarredZeroes.
   std::vector<int> stars_in_col_;
@@ -218,13 +219,9 @@ class HungarianOptimizer {
   std::vector<int> preimage_;  // i.e. the agents
   std::vector<int> image_;     // i.e. the tasks
 
-  // The locations of a zero found in step 4.
-  int zero_col_;
-  int zero_row_;
-
   // The width_ and height_ of the initial (non-expanded) cost matrix.
-  int width_;
-  int height_;
+  int width_ = 0;
+  int height_ = 0;
 
   // The current state of the algorithm
   HungarianOptimizer::Step state_;
