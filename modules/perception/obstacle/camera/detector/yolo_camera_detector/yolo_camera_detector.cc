@@ -249,10 +249,9 @@ bool YoloCameraDetector::init_cnn(const string &yolo_root) {
   return true;
 }
 
-bool YoloCameraDetector::Multitask(const cv::Mat &frame,
-                                   const CameraDetectorOptions &options,
-                                   vector<VisualObjectPtr> *objects,
-                                   cv::Mat *mask) {
+bool YoloCameraDetector::Multitask(
+    const cv::Mat &frame, const CameraDetectorOptions &options,
+    vector<std::shared_ptr<VisualObject>> *objects, cv::Mat *mask) {
   if (objects == nullptr) {
     AERROR << "'objects' is a null pointer.";
     return false;
@@ -271,26 +270,17 @@ bool YoloCameraDetector::Multitask(const cv::Mat &frame,
     return false;
   }
 
-  cv::Mat local_mask(lane_output_height_, lane_output_width_, CV_32FC1);
-  memcpy(local_mask.data,
+  *mask = cv::Mat(lane_output_height_, lane_output_width_, CV_32FC1);
+  memcpy(mask->data,
          seg_blob->cpu_data() + lane_output_width_ * lane_output_height_,
          lane_output_width_ * lane_output_height_ * sizeof(float));
-
-  int roi_w = image_width_;
-  int roi_h = image_height_ - offset_y_;
-  cv::Rect roi(0, offset_y_, roi_w, roi_h);
-  if (roi_w == lane_output_width_ && roi_h == lane_output_height_) {
-    local_mask.copyTo((*mask)(roi));
-  } else {
-    cv::resize(local_mask, (*mask)(roi), cv::Size(roi_w, roi_h));
-  }
 
   return true;
 }
 
-bool YoloCameraDetector::Detect(const cv::Mat &frame,
-                                const CameraDetectorOptions &options,
-                                vector<VisualObjectPtr> *objects) {
+bool YoloCameraDetector::Detect(
+    const cv::Mat &frame, const CameraDetectorOptions &options,
+    vector<std::shared_ptr<VisualObject>> *objects) {
   if (objects == nullptr) {
     return false;
   }
@@ -320,7 +310,7 @@ bool YoloCameraDetector::Detect(const cv::Mat &frame,
   caffe::Timer post_time;
   post_time.Start();
 
-  vector<VisualObjectPtr> temp_objects;
+  vector<std::shared_ptr<VisualObject>> temp_objects;
 
   if (FLAGS_obs_camera_detector_gpu >= 0) {
     ADEBUG << "Get objects by GPU";
@@ -331,7 +321,7 @@ bool YoloCameraDetector::Detect(const cv::Mat &frame,
 
   ADEBUG << "object size = " << temp_objects.size();
   for (int i = 0; i < static_cast<int>(temp_objects.size()); ++i) {
-    VisualObjectPtr obj = (temp_objects)[i];
+    std::shared_ptr<VisualObject> obj = (temp_objects)[i];
     ADEBUG << "type prob size for object" << i << " is "
            << sizeof(obj->type_probs) << " (" << obj << ")";
     ADEBUG << "prob: " << obj->type_probs[static_cast<int>(obj->type)];
@@ -389,7 +379,7 @@ bool YoloCameraDetector::Detect(const cv::Mat &frame,
 string YoloCameraDetector::Name() const { return "YoloCameraDetector"; }
 
 bool YoloCameraDetector::get_objects_cpu(
-    std::vector<VisualObjectPtr> *objects) {
+    std::vector<std::shared_ptr<VisualObject>> *objects) {
   int num_classes = types_.size();
   auto loc_blob =
       cnnadapter_->get_blob_by_name(yolo_param_.net_param().loc_blob());
@@ -478,7 +468,7 @@ bool YoloCameraDetector::get_objects_cpu(
         continue;
       }
 
-      VisualObjectPtr obj(new VisualObject);
+      std::shared_ptr<VisualObject> obj(new VisualObject);
       obj->type = static_cast<ObjectType>(label);
       obj->type_probs.assign(static_cast<int>(ObjectType::MAX_OBJECT_TYPE),
                              0.0f);
@@ -523,7 +513,7 @@ bool YoloCameraDetector::get_objects_cpu(
   return true;
 }
 bool YoloCameraDetector::get_objects_gpu(
-    std::vector<VisualObjectPtr> *objects) {
+    std::vector<std::shared_ptr<VisualObject>> *objects) {
   auto loc_blob =
       cnnadapter_->get_blob_by_name(yolo_param_.net_param().loc_blob());
   auto obj_blob =
@@ -609,7 +599,7 @@ bool YoloCameraDetector::get_objects_gpu(
         continue;
       }
 
-      VisualObjectPtr obj(new VisualObject);
+      std::shared_ptr<VisualObject> obj(new VisualObject);
       obj->type = static_cast<ObjectType>(label);
       obj->type_probs.assign(static_cast<int>(ObjectType::MAX_OBJECT_TYPE),
                              0.0f);
