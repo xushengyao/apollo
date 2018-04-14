@@ -304,9 +304,9 @@ bool CCLanePostProcessor::AddInstanceIntoLaneObject(
            << " order polynomial curve.";
   }
   // Option 1: Use C0 for lateral distance
-  // lane_object->lateral_distance = lane_object->model(0);
+  lane_object->lateral_distance = lane_object->model(0);
   // Option 2: Use y-value of closest point.
-  lane_object->lateral_distance = lane_object->pos[0].y();
+  // lane_object->lateral_distance = lane_object->pos[0].y();
 
   return true;
 }
@@ -327,7 +327,7 @@ bool CCLanePostProcessor::AddInstanceIntoLaneObjectImage(
 
   auto graph = cur_frame_->graph(instance.graph_id);
 
-  ADEBUG << "show points for lane object: ";
+//  ADEBUG << "show points for lane object: ";
 
   ScalarType y_offset = static_cast<ScalarType>(image_height_ - 1);
 
@@ -415,9 +415,9 @@ bool CCLanePostProcessor::AddInstanceIntoLaneObjectImage(
   }
 
   // Option 1: Use C0 for lateral distance
-  // lane_object->lateral_distance = lane_object->model(0);
+  lane_object->lateral_distance = lane_object->model(0);
   // Option 2: Use y-value of closest point.
-  lane_object->lateral_distance = lane_object->pos[0].y();
+  // lane_object->lateral_distance = lane_object->pos[0].y();
 
   return true;
 }
@@ -493,7 +493,7 @@ bool CCLanePostProcessor::GenerateLaneInstances(const cv::Mat &lane_map) {
 
   cur_frame_->Process(cur_lane_instances_);
 
-  ADEBUG << "number of lane instances = " << cur_lane_instances_->size();
+//  ADEBUG << "number of lane instances = " << cur_lane_instances_->size();
 
   return true;
 }
@@ -512,13 +512,10 @@ bool CCLanePostProcessor::Process(const cv::Mat &lane_map,
   }
 
   time_stamp_ = options.timestamp;
-  //  AINFO << "use history: " << options.use_lane_history;
-  //  AINFO << "use history: " << use_history_;
 
   if (options.use_lane_history && !use_history_) {
     InitLaneHistory();
   }
-  //  AINFO << "use history: " << use_history_;
 
   cur_lane_instances_.reset(new vector<LaneInstance>);
   if (!GenerateLaneInstances(lane_map)) {
@@ -531,7 +528,6 @@ bool CCLanePostProcessor::Process(const cv::Mat &lane_map,
   /// generate lane objects
   if (options_.space_type == SpaceType::IMAGE) {
     /// for image space coordinate
-    AINFO << "generate lane objects in image space ...";
     ScalarType x_center = static_cast<ScalarType>(roi_.x + roi_.width / 2);
 
     lane_objects->reset(new LaneObjects());
@@ -576,19 +572,20 @@ bool CCLanePostProcessor::Process(const cv::Mat &lane_map,
   } else {
     /// for vehicle space coordinate
     // select lane instances with non-overlap assumption
-    ADEBUG << "generate lane objects ...";
+    // ADEBUG << "generate lane objects ...";
     lane_objects->reset(new LaneObjects());
     (*lane_objects)->reserve(2 * MAX_LANE_SPATIAL_LABELS);
     vector<pair<ScalarType, int>> origin_lateral_dist_object_id;
     origin_lateral_dist_object_id.reserve(2 * MAX_LANE_SPATIAL_LABELS);
     int count_lane_objects = 0;
+    ADEBUG << "cur_lane_instances_->size(): " << cur_lane_instances_->size();
     for (auto it = cur_lane_instances_->begin();
          it != cur_lane_instances_->end(); ++it) {
-      ADEBUG << "for lane instance " << it - cur_lane_instances_->begin();
+       ADEBUG << "for lane instance " << it - cur_lane_instances_->begin();
 
       // ignore current instance if it is too small
       if (it->siz < options_.frame.min_instance_size_prefiltered) {
-        ADEBUG << "current instance is too small: " << it->siz;
+        ADEBUG << "current lane instance is too small: " << it->siz;
         continue;
       }
 
@@ -597,7 +594,12 @@ bool CCLanePostProcessor::Process(const cv::Mat &lane_map,
 
       if ((*lane_objects)->empty()) {
         // create a new lane object
+
         (*lane_objects)->push_back(cur_object);
+        ADEBUG << " lane object XXX has"
+             << (*lane_objects)->at(count_lane_objects).pos.size()
+             << " points, lateral distance="
+             << (*lane_objects)->at(count_lane_objects).lateral_distance;
         origin_lateral_dist_object_id.push_back(
             std::make_pair(cur_object.lateral_distance, count_lane_objects++));
         ADEBUG << "generate a new lane object from instance";
@@ -695,14 +697,15 @@ bool CCLanePostProcessor::Process(const cv::Mat &lane_map,
                << "(" << MIN_BETWEEN_LANE_DISTANCE << ")";
         continue;
       }
-
       // accept the new lane object
       (*lane_objects)->push_back(cur_object);
-      // AINFO << "Lane ID: " << count_lane_objects
-      //       << ", C0: " << cur_object.lateral_distance;
+        ADEBUG << " lane object XXX has"
+            << (*lane_objects)->at(count_lane_objects).pos.size()
+            << " points, lateral distance="
+            << (*lane_objects)->at(count_lane_objects).lateral_distance;
       origin_lateral_dist_object_id.push_back(
           std::make_pair(cur_object.lateral_distance, count_lane_objects++));
-      ADEBUG << "generate a new lane object from instance.";
+//      ADEBUG << "generate a new lane object from instance.";
     }
 
     // determine spatial label of lane object
@@ -743,19 +746,15 @@ bool CCLanePostProcessor::Process(const cv::Mat &lane_map,
         continue;
       }
       b_left_index_list[index] = true;
-      // (*lane_objects)->at(object_id).spatial =
-      //     static_cast<SpatialLabelType>(spatial_index);
       (*lane_objects)->at(object_id).spatial =
           static_cast<SpatialLabelType>(index);
       valid_lane_objects.push_back(object_id);
-
-      // AINFO << " lane object "
-      //       << (*lane_objects)->at(object_id).GetSpatialLabel() << " has "
-      //       << (*lane_objects)->at(object_id).pos.size() << " points: "
-      //       << "lateral distance="
-      //       << (*lane_objects)->at(object_id).lateral_distance;
+      ADEBUG << " lane object "
+            << (*lane_objects)->at(object_id).GetSpatialLabel() << " has "
+            << (*lane_objects)->at(object_id).pos.size() << " points: "
+            << "lateral distance="
+            << (*lane_objects)->at(object_id).lateral_distance;
     }
-
     // for right-side lanes
     std::vector<bool> b_right_index_list(MAX_LANE_SPATIAL_LABELS, false);
     int i_r = index_closest_left + 1;
@@ -777,16 +776,13 @@ bool CCLanePostProcessor::Process(const cv::Mat &lane_map,
       b_right_index_list[index] = true;
       (*lane_objects)->at(object_id).spatial =
           static_cast<SpatialLabelType>(MAX_LANE_SPATIAL_LABELS + index);
-      //      (*lane_objects)->at(object_id).spatial =
-      //      static_cast<SpatialLabelType>(
-      //          MAX_LANE_SPATIAL_LABELS + spatial_index);
-      valid_lane_objects.push_back(object_id);
 
-      // AINFO << " lane object "
-      //       << (*lane_objects)->at(object_id).GetSpatialLabel() << " has "
-      //       << (*lane_objects)->at(object_id).pos.size() << " points: "
-      //       << "lateral distance="
-      //       << (*lane_objects)->at(object_id).lateral_distance;
+      valid_lane_objects.push_back(object_id);
+      ADEBUG << " lane object "
+            << (*lane_objects)->at(object_id).GetSpatialLabel() << " has "
+            << (*lane_objects)->at(object_id).pos.size() << " points: "
+            << "lateral distance="
+            << (*lane_objects)->at(object_id).lateral_distance;
     }
     if ((*lane_objects)->size() != static_cast<size_t>(count_lane_objects)) {
       AERROR << "the number of lane objects does not match.";
@@ -817,7 +813,6 @@ bool CCLanePostProcessor::Process(const cv::Mat &lane_map,
     if (CorrectWithLaneHistory(*lane_objects)) {
       lane_history_.push_back(*(*lane_objects));
     } else {
-      AINFO << "use history instead of current lane detection";
       lane_history_.pop_front();
     }
     auto vs = options.vehicle_status;
@@ -868,7 +863,6 @@ bool CCLanePostProcessor::CorrectWithLaneHistory(LaneObjectsPtr lane_objects) {
       // fit a 2nd-order polynomial curve;
       lane.order = 2;
     }
-    AINFO << "history size: " << lane.point_num;
     if (lane.point_num < 2 || !PolyFit(lane.pos, lane.order, &(lane.model))) {
       AWARN << "failed to fit " << lane.order << " order polynomial curve.";
       is_valid[l] = true;
@@ -892,9 +886,9 @@ bool CCLanePostProcessor::CorrectWithLaneHistory(LaneObjectsPtr lane_objects) {
             std::abs(pos.y() - PolyEval(pos.x(), lane.order, lane.model));
         count++;
       }
-      AINFO << "lane average delta: " << ave_delta << " / " << count;
+//      ADEBUG << "lane average delta: " << ave_delta << " / " << count;
       if (count == 0 || ave_delta / count > AVEAGE_LANE_WIDTH_METER / 2.0) {
-        if (count > 0) AINFO << "ave_delta is: " << ave_delta / count;
+//        if (count > 0) ADEBUG << "ave_delta is: " << ave_delta / count;
         lane_objects->erase(lane_objects->begin() + idx);
         lane_objects->push_back(lane);
       } else {
@@ -925,7 +919,6 @@ bool CCLanePostProcessor::FindLane(const LaneObjects &lane_objects,
 
 void CCLanePostProcessor::InitLaneHistory() {
   use_history_ = true;
-  AINFO << "Init Lane History Start;";
   lane_history_.set_capacity(MAX_LANE_HISTORY);
   motion_buffer_ = std::make_shared<MotionBuffer>(MAX_LANE_HISTORY);
   generated_lanes_ =
@@ -962,7 +955,7 @@ void CCLanePostProcessor::FilterWithLaneHistory(LaneObjectsPtr lane_objects) {
           project_pos.y() -
           PolyEval(project_pos.x(), lane_object.order, lane_object.model);
       // delete if too far from polyline
-      if (std::abs(delta_y) > 3.7) {
+      if (std::abs(delta_y) > AVEAGE_LANE_WIDTH_METER) {
         erase_idx.push_back(i);
         break;
       }
@@ -999,7 +992,6 @@ bool CCLanePostProcessor::CompensateLaneObjects(LaneObjectsPtr lane_objects) {
   }
 
   if (!has_ego_lane_left) {
-    AINFO << "add virtual lane L_0 ...";
     if (ego_lane_right_idx == -1) {
       AERROR << "failed to compensate left ego lane due to no right ego lane.";
       return false;
