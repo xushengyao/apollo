@@ -185,10 +185,12 @@ class SimulationWorldService {
    */
   template <typename AdapterType>
   void UpdateWithLatestObserved(const std::string &adapter_name,
-                                AdapterType *adapter) {
+                                AdapterType *adapter, bool logging = true) {
     if (adapter->Empty()) {
-      AINFO_EVERY(100) << adapter_name
-                       << " adapter has not received any data yet.";
+      if (logging) {
+        AINFO_EVERY(100) << adapter_name
+                         << " adapter has not received any data yet.";
+      }
       return;
     }
 
@@ -242,6 +244,10 @@ class SimulationWorldService {
   FRIEND_TEST(SimulationWorldServiceTest, UpdateDecision);
   FRIEND_TEST(SimulationWorldServiceTest, UpdatePrediction);
   FRIEND_TEST(SimulationWorldServiceTest, UpdateRouting);
+  FRIEND_TEST(SimulationWorldServiceTest, UpdateGps);
+  FRIEND_TEST(SimulationWorldServiceTest, UpdateControlCommandWithSimpleLonLat);
+  FRIEND_TEST(SimulationWorldServiceTest, UpdateControlCommandWithSimpleMpc);
+  FRIEND_TEST(SimulationWorldServiceTest, DownsampleSpeedPointsByInterval);
 };
 
 }  // namespace dreamview

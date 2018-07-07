@@ -23,14 +23,17 @@
 #include "google/protobuf/repeated_field.h"
 
 #include "modules/common/adapters/adapter_manager.h"
+#include "modules/common/math/quaternion.h"
 #include "modules/common/time/time.h"
 #include "modules/common/vehicle_state/vehicle_state_provider.h"
 #include "modules/map/hdmap/hdmap_util.h"
 #include "modules/planning/common/planning_gflags.h"
 #include "modules/planning/common/planning_thread_pool.h"
+#include "modules/planning/common/planning_util.h"
 #include "modules/planning/common/trajectory/trajectory_stitcher.h"
 #include "modules/planning/planner/em/em_planner.h"
 #include "modules/planning/planner/lattice/lattice_planner.h"
+#include "modules/planning/planner/navi/navi_planner.h"
 #include "modules/planning/planner/rtk/rtk_replay_planner.h"
 #include "modules/planning/reference_line/reference_line_provider.h"
 #include "modules/planning/tasks/traffic_decider/traffic_decider.h"
@@ -47,12 +50,14 @@ using apollo::common::adapter::AdapterManager;
 using apollo::common::time::Clock;
 using apollo::hdmap::HDMapUtil;
 
+Planning::~Planning() { Stop(); }
+
 std::string Planning::Name() const { return "planning"; }
 
 #define CHECK_ADAPTER(NAME)                                              \
   if (AdapterManager::Get##NAME() == nullptr) {                          \
     AERROR << #NAME << " is not registered";                             \
-    return Status(ErrorCode::PLANNING_ERROR, #NAME " is not registerd"); \
+    return Status(ErrorCode::PLANNING_ERROR, #NAME " is not registered"); \
   }
 
 #define CHECK_ADAPTER_IF(CONDITION, NAME) \
@@ -65,6 +70,8 @@ void Planning::RegisterPlanners() {
                             []() -> Planner* { return new EMPlanner(); });
   planner_factory_.Register(PlanningConfig::LATTICE,
                             []() -> Planner* { return new LatticePlanner(); });
+  planner_factory_.Register(PlanningConfig::NAVI,
+                            []() -> Planner* { return new NaviPlanner(); });
 }
 
 Status Planning::InitFrame(const uint32_t sequence_num,
@@ -75,10 +82,28 @@ Status Planning::InitFrame(const uint32_t sequence_num,
                          vehicle_state, reference_line_provider_.get()));
   auto status = frame_->Init();
   if (!status.ok()) {
-    AERROR << "failed to init frame";
-    return Status(ErrorCode::PLANNING_ERROR, "init frame failed");
+    AERROR << "failed to init frame:" << status.ToString();
+    return status;
   }
   return Status::OK();
+}
+
+void Planning::ResetPullOver(const routing::RoutingResponse& response) {
+  auto* pull_over =
+      util::GetPlanningStatus()->mutable_planning_state()->mutable_pull_over();
+  if (!last_routing_.has_header()) {
+    last_routing_ = response;
+    pull_over->Clear();
+    return;
+  }
+  if (!pull_over->in_pull_over()) {
+    return;
+  }
+  if (hdmap::PncMap::IsNewRouting(last_routing_, response)) {
+    pull_over->Clear();
+    last_routing_ = response;
+    AINFO << "Cleared Pull Over Status after received new routing";
+  }
 }
 
 Status Planning::Init() {
@@ -93,6 +118,9 @@ Status Planning::Init() {
 
   // initialize planning thread pool
   PlanningThreadPool::instance()->Init();
+
+  // clear planning status
+  util::GetPlanningStatus()->Clear();
 
   if (!AdapterManager::Initialized()) {
     AdapterManager::Init(FLAGS_planning_adapter_config_filename);
@@ -110,8 +138,9 @@ Status Planning::Init() {
   if (!FLAGS_use_navigation_mode) {
     hdmap_ = HDMapUtil::BaseMapPtr();
     CHECK(hdmap_) << "Failed to load map";
-    reference_line_provider_ = std::unique_ptr<ReferenceLineProvider>(
-        new ReferenceLineProvider(hdmap_));
+    // Prefer "std::make_unique" to direct use of "new".
+    // Reference "https://herbsutter.com/gotw/_102/" for details.
+    reference_line_provider_ = std::make_unique<ReferenceLineProvider>(hdmap_);
   }
 
   RegisterPlanners();
@@ -139,7 +168,11 @@ bool Planning::IsVehicleStateValid(const VehicleState& vehicle_state) {
 Status Planning::Start() {
   timer_ = AdapterManager::CreateTimer(
       ros::Duration(1.0 / FLAGS_planning_loop_rate), &Planning::OnTimer, this);
-  reference_line_provider_->Start();
+  // The "reference_line_provider_" may not be created yet in navigation mode.
+  // It is necessary to check its existence.
+  if (reference_line_provider_) {
+    reference_line_provider_->Start();
+  }
   start_time_ = Clock::NowInSeconds();
   AINFO << "Planning started";
   return Status::OK();
@@ -214,8 +247,9 @@ void Planning::RunOnce() {
   if (FLAGS_use_navigation_mode) {
     // recreate reference line provider in every cycle
     hdmap_ = HDMapUtil::BaseMapPtr();
-    reference_line_provider_ = std::unique_ptr<ReferenceLineProvider>(
-        new ReferenceLineProvider(hdmap_));
+    // Prefer "std::make_unique" to direct use of "new".
+    // Reference "https://herbsutter.com/gotw/_102/" for details.
+    reference_line_provider_ = std::make_unique<ReferenceLineProvider>(hdmap_);
   }
 
   // localization
@@ -229,6 +263,21 @@ void Planning::RunOnce() {
 
   Status status =
       VehicleStateProvider::instance()->Update(localization, chassis);
+
+  if (FLAGS_use_navigation_mode) {
+    auto vehicle_config = ComputeVehicleConfigFromLocalization(localization);
+
+    if (last_vehicle_config_.is_valid_ && vehicle_config.is_valid_) {
+      auto x_diff = vehicle_config.x_ - last_vehicle_config_.x_;
+      auto y_diff = vehicle_config.y_ - last_vehicle_config_.y_;
+      auto theta_diff = vehicle_config.theta_ - last_vehicle_config_.theta_;
+
+      TrajectoryStitcher::TransformLastPublishedTrajectory(x_diff, y_diff,
+          theta_diff, last_publishable_trajectory_.get());
+    }
+    last_vehicle_config_ = vehicle_config;
+  }
+
   VehicleState vehicle_state =
       VehicleStateProvider::instance()->vehicle_state();
 
@@ -270,46 +319,19 @@ void Planning::RunOnce() {
     AWARN_EVERY(100) << "prediction is enabled but no prediction provided";
   }
 
-  // Update reference line provider
+  // Update reference line provider and reset pull over if necessary
   if (!FLAGS_use_navigation_mode) {
     reference_line_provider_->UpdateVehicleState(vehicle_state);
+    ResetPullOver(AdapterManager::GetRoutingResponse()->GetLatestObserved());
   }
 
   const double planning_cycle_time = 1.0 / FLAGS_planning_loop_rate;
-
-  if (FLAGS_use_navigation_mode) {
-    TrajectoryStitcher::TransformLastPublishedTrajectory(
-        planning_cycle_time, last_publishable_trajectory_.get());
-  }
 
   bool is_replan = false;
   std::vector<TrajectoryPoint> stitching_trajectory;
   stitching_trajectory = TrajectoryStitcher::ComputeStitchingTrajectory(
       vehicle_state, start_timestamp, planning_cycle_time,
       last_publishable_trajectory_.get(), &is_replan);
-
-  if (FLAGS_use_navigation_mode) {
-    std::list<ReferenceLine> reference_lines;
-    std::list<hdmap::RouteSegments> segments;
-    if (!reference_line_provider_->GetReferenceLines(&reference_lines,
-                                                     &segments) ||
-        reference_lines.empty()) {
-      std::string msg("Reference line is not ready");
-      AERROR << msg;
-      not_ready->set_reason(msg);
-      status.Save(not_ready_pb.mutable_header()->mutable_status());
-      PublishPlanningPb(&not_ready_pb, start_timestamp);
-      return;
-    }
-    const double init_point_v = stitching_trajectory.front().v();
-    const double init_point_a = stitching_trajectory.front().a();
-    stitching_trajectory = TrajectoryStitcher::CalculateInitPoint(
-        vehicle_state, reference_lines.front(), &is_replan);
-    if (!is_replan) {
-      stitching_trajectory.back().set_v(init_point_v);
-      stitching_trajectory.back().set_a(init_point_a);
-    }
-  }
 
   const uint32_t frame_num = AdapterManager::GetPlanning()->GetSeqNum() + 1;
   status = InitFrame(frame_num, stitching_trajectory.back(), start_timestamp,
@@ -329,8 +351,7 @@ void Planning::RunOnce() {
   trajectory_pb->mutable_latency_stats()->set_init_frame_time_ms(
       Clock::NowInSeconds() - start_timestamp);
   if (!status.ok()) {
-    std::string msg("Failed to init frame");
-    AERROR << msg;
+    AERROR << status.ToString();
     if (FLAGS_publish_estop) {
       // Because the function "Control::ProduceControlCommand()" checks the
       // "estop" signal with the following line (Line 170 in control.cc):
@@ -346,7 +367,7 @@ void Planning::RunOnce() {
       trajectory_pb->mutable_decision()
           ->mutable_main_decision()
           ->mutable_not_ready()
-          ->set_reason(msg);
+          ->set_reason(status.ToString());
       status.Save(trajectory_pb->mutable_header()->mutable_status());
       PublishPlanningPb(trajectory_pb, start_timestamp);
     }
@@ -426,13 +447,14 @@ void Planning::SetFallbackCruiseTrajectory(ADCTrajectory* cruise_trajectory) {
 
 void Planning::Stop() {
   AERROR << "Planning Stop is called";
-  PlanningThreadPool::instance()->Stop();
+  // PlanningThreadPool::instance()->Stop();
   if (reference_line_provider_) {
     reference_line_provider_->Stop();
   }
   last_publishable_trajectory_.reset(nullptr);
   frame_.reset(nullptr);
   planner_.reset(nullptr);
+  FrameHistory::instance()->Clear();
 }
 
 void Planning::SetLastPublishableTrajectory(
@@ -542,6 +564,30 @@ Status Planning::Plan(const double current_time_stamp,
   best_ref_info->ExportEngageAdvice(trajectory_pb->mutable_engage_advice());
 
   return status;
+}
+
+Planning::VehicleConfig Planning::ComputeVehicleConfigFromLocalization(
+    const localization::LocalizationEstimate& localization) const {
+  Planning::VehicleConfig vehicle_config;
+
+  if (!localization.pose().has_position()) {
+    return vehicle_config;
+  }
+
+  vehicle_config.x_ = localization.pose().position().x();
+  vehicle_config.y_ = localization.pose().position().y();
+
+  const auto &orientation = localization.pose().orientation();
+
+  if (localization.pose().has_heading()) {
+    vehicle_config.theta_ = localization.pose().heading();
+  } else {
+    vehicle_config.theta_ = common::math::QuaternionToHeading(orientation.qw(),
+        orientation.qx(), orientation.qy(), orientation.qz());
+  }
+
+  vehicle_config.is_valid_ = true;
+  return vehicle_config;
 }
 
 }  // namespace planning
